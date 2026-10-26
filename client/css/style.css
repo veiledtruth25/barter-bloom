@@ -34,7 +34,7 @@ kbd { font-family: inherit; font-size: 10px; background: rgba(0, 0, 0, 0.12); pa
 /* ------------------------------------------------------------------ HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; }
 #hud > * { pointer-events: auto; }
-.hud-tl { position: absolute; top: 14px; left: 14px; display: flex; flex-direction: column; gap: 10px; width: 290px; pointer-events: none; }
+.hud-tl { position: absolute; top: 14px; left: 14px; display: flex; flex-direction: column; gap: 10px; width: 330px; pointer-events: none; }
 .hud-tl > * { pointer-events: auto; }
 .date-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
 .season-badge { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 26px; background: linear-gradient(135deg, #ffe3ef, #ffc2da); box-shadow: inset 0 -3px 0 rgba(0,0,0,0.08); }
@@ -42,11 +42,11 @@ kbd { font-family: inherit; font-size: 10px; background: rgba(0, 0, 0, 0.12); pa
 .season-badge.fall { background: linear-gradient(135deg, #ffd8b0, #f4a261); }
 .season-badge.winter { background: linear-gradient(135deg, #e8f4ff, #b8dcff); }
 .date-info { flex: 1; }
-.date-main { font-weight: 600; font-size: 15px; }
+.date-main { font-weight: 600; font-size: 15px; white-space: nowrap; }
 .date-sub { font-size: 12px; color: var(--ink-soft); }
 .clock { text-align: right; }
 .clock-time { font-size: 24px; font-weight: 700; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
-.clock-weather { font-size: 13px; color: var(--ink-soft); }
+.clock-weather { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
 .clock-time.late { color: var(--red); animation: pulse 1s infinite; }
 
 .stamina-card { display: flex; gap: 12px; padding: 10px 14px; align-items: center; }

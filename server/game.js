@@ -126,7 +126,7 @@ export class Game {
   }
 
   timeState() {
-    return { ...this.world, hot: this.market.hot };
+    return { ...this.world, hot: this.market.hot, rate: this.minutesPerSecond };
   }
 
   marketState() {
