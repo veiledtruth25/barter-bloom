@@ -3,13 +3,19 @@ import {
   FIELD_W, FIELD_H, DAYS_PER_SEASON, DAY_START_MIN, DAY_END_MIN, SLEEP_ALLOWED_MIN, MAX_STAMINA, REACH,
   MAX_LISTINGS, SEASONS, WEATHER_TABLE, STAMINA_COST, CAN_LEVELS, BARN_LEVELS, CROPS, ANIMALS, ITEMS,
   PREMIUM_AFFECTION, MAX_AFFECTION, FORAGE_BY_SEASON, START_GOLD, START_ITEMS, PLOT_CENTERS, plotLayout,
-  TOWN, WILD_ZONES, WILD_TREES, nearWater, itemPrice,
+  TOWN, WILD_ZONES, WILD_TREES, WEATHER, nearWater, itemPrice, storeOpen,
 } from '../shared/defs.js';
+import {
+  VILLAGERS, VILLAGER_IDS, MAX_FRIENDSHIP, TALK_POINTS, GIFT_POINTS, REQUEST_POINTS, MILESTONES, KNOCK_UNTIL,
+  npcState, dayIndexOf, hearts, isBirthday, giftReaction, requestable, fillText, perkActive, storePrice, upgradeGold,
+} from '../shared/villagers.js';
 
 const ANIMAL_NAMES = ['Mimi', 'Kiko', 'Bubu', 'Popo', 'Lulu', 'Dodo', 'Nana', 'Cici', 'Momo', 'Toto', 'Pipi', 'Gogo'];
 const COLORS = ['#e8553e', '#3e8ee8', '#e8b93e', '#8a3ee8', '#3ec98a', '#e83e9a', '#3ed6e8', '#f08a24'];
 
 const uid = (p) => p + crypto.randomBytes(5).toString('hex');
+const STORE_CLOSED = 'Toko Umum tutup. Pak Darto buka pukul 08:00–18:00.';
+const MAX_REQUESTS = 3;
 const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
 const clampInt = (n, lo, hi) => Math.max(lo, Math.min(hi, Math.floor(Number(n) || 0)));
 
@@ -57,8 +63,10 @@ export class Game {
     this.plots = PLOT_CENTERS.map((_, i) => ({ id: i, ownerId: null, tiles: this.freshField(), barnLevel: 0, animals: [] }));
     this.wild = [];
     this.market = { listings: [], mult: {}, hot: null, trend: {} };
+    this.requests = [];
     this.respawnWild(true);
     this.pickHotItem();
+    this.refreshRequests();
   }
 
   load(data) {
@@ -67,8 +75,12 @@ export class Game {
     this.plots = data.plots;
     this.wild = data.wild;
     this.market = data.market;
+    this.requests = data.requests || [];
+    if (!this.requests.length) this.refreshRequests();
     for (const p of Object.values(this.players)) {
       p.look = p.look || sanitizeLook(null, p.color);
+      p.rel = p.rel || {};
+      p.npcChat = null;
       p.online = false;
       p.sleeping = false;
       p.fish = null;
@@ -80,10 +92,10 @@ export class Game {
   serialize() {
     const players = {};
     for (const [id, p] of Object.entries(this.players)) {
-      const { fish, tradeId, tradeReq, ...rest } = p;
+      const { fish, tradeId, tradeReq, npcChat, ...rest } = p;
       players[id] = rest;
     }
-    return { world: this.world, players, plots: this.plots, wild: this.wild, market: this.market };
+    return { world: this.world, players, plots: this.plots, wild: this.wild, market: this.market, requests: this.requests };
   }
 
   freshField() {
@@ -111,9 +123,9 @@ export class Game {
 
   privateState(p) {
     return {
-      id: p.id, name: p.name, color: p.color, gold: p.gold, stamina: p.stamina, maxStamina: MAX_STAMINA,
+      id: p.id, name: p.name, color: p.color, gold: p.gold, stamina: p.stamina, maxStamina: this.maxStamina(p),
       water: p.water, canLevel: p.canLevel, inv: p.inv, bin: p.bin, plotId: p.plotId, sleeping: p.sleeping,
-      tradeId: p.tradeId,
+      tradeId: p.tradeId, rel: p.rel,
     };
   }
 
@@ -144,6 +156,7 @@ export class Game {
       plots: this.plots.map((pl) => this.publicPlot(pl)),
       wild: this.wild,
       market: this.marketState(),
+      requests: this.requests,
     };
   }
 
@@ -154,6 +167,7 @@ export class Game {
   sendWild() { this.net.broadcast('wild', this.wild); }
   sendMarket() { this.net.broadcast('market', this.marketState()); }
   sendPlayerInfo(p) { this.net.broadcast('player', this.publicPlayer(p)); }
+  sendRequests() { this.net.broadcast('requests', this.requests); }
   toast(p, text, kind = 'info') { this.net.toPlayer(p.id, 'toast', { text, kind }); }
   fx(type, x, z, extra = {}) { this.net.broadcast('fx', { type, x, z, ...extra }); }
 
@@ -182,7 +196,7 @@ export class Game {
       inv: { ...START_ITEMS }, bin: {}, plotId: plot.id,
       look: null,
       x: L.houseDoor.x + 1, z: L.houseDoor.z, ry: 0, online: false, sleeping: false,
-      lastReport: null, fish: null, tradeId: null, tradeReq: null,
+      lastReport: null, fish: null, tradeId: null, tradeReq: null, rel: {}, npcChat: null,
     };
     p.look = sanitizeLook(look, p.color);
     plot.ownerId = p.id;
@@ -229,15 +243,17 @@ export class Game {
     for (const p of Object.values(this.players)) {
       const lines = [];
       let total = 0;
+      // Bu Ratna's merchant contacts pay a little extra.
+      const bonus = perkActive(p.rel, 'ratna') ? 1.05 : 1;
       for (const [id, qty] of Object.entries(p.bin)) {
-        const price = this.shipPrice(id);
+        const price = Math.round(this.shipPrice(id) * bonus);
         lines.push({ id, qty, price });
         total += price * qty;
         shipped[id] = (shipped[id] || 0) + qty;
       }
       p.gold += total;
       p.bin = {};
-      reports[p.id] = { lines, total, passedOut: passedOut && p.online && !p.sleeping };
+      reports[p.id] = { lines, total, notes: [], passedOut: passedOut && p.online && !p.sleeping };
     }
     // 2. Supply & demand: heavily shipped goods drop in price, others recover.
     const trend = {};
@@ -290,17 +306,20 @@ export class Game {
         a.petted = false;
       }
     }
-    // 6. Wild area respawns.
+    // 6. Villagers: friendship perks, birthdays and new requests.
+    this.villagerMorning(reports);
+    // 7. Wild area respawns.
     this.respawnWild(false);
     this.pickHotItem();
     for (const id of Object.keys(trend)) {
       const now = this.shipPrice(id);
       this.market.trend[id] = now > trend[id] ? 1 : now < trend[id] ? -1 : 0;
     }
-    // 7. Everyone wakes up.
+    // 8. Everyone wakes up.
     for (const p of Object.values(this.players)) {
       const rep = reports[p.id];
-      p.stamina = rep.passedOut ? Math.round(MAX_STAMINA * 0.6) : MAX_STAMINA;
+      const max = this.maxStamina(p);
+      p.stamina = rep.passedOut ? Math.round(max * 0.6) : max;
       if (p.sleeping || !p.online) {
         const L = plotLayout(p.plotId);
         p.x = L.houseDoor.x + 1;
@@ -314,6 +333,7 @@ export class Game {
     for (const plot of this.plots) this.sendPlot(plot);
     this.sendWild();
     this.sendMarket();
+    this.sendRequests();
     for (const p of Object.values(this.players)) {
       if (!p.online) continue;
       this.sendPlayerInfo(p);
@@ -384,6 +404,9 @@ export class Game {
     const parts = [`${cost.gold}G`];
     for (const [id, q] of Object.entries(cost.items || {})) parts.push(`${q} ${ITEMS[id].name}`);
     return parts.join(' + ');
+  }
+  maxStamina(p) {
+    return MAX_STAMINA + (perkActive(p.rel, 'harjo') ? 20 : 0);
   }
   useStamina(p, tool) {
     const cost = STAMINA_COST[tool] || 0;
@@ -589,9 +612,10 @@ export class Game {
   eat(p, itemId) {
     const def = ITEMS[itemId];
     if (!def || !def.eat) fail('Itu tidak bisa dimakan.');
-    if (p.stamina >= MAX_STAMINA) fail('Kamu sudah kenyang & bertenaga!');
+    const max = this.maxStamina(p);
+    if (p.stamina >= max) fail('Kamu sudah kenyang & bertenaga!');
     if (!this.takeItem(p, itemId)) fail('Kamu tidak punya itu.');
-    p.stamina = Math.min(MAX_STAMINA, p.stamina + def.eat);
+    p.stamina = Math.min(max, p.stamina + def.eat);
     this.sendSelf(p);
     this.fx('eat', p.x, p.z, { pid: p.id });
     return { ok: true, msg: `Nyam! +${def.eat} stamina` };
@@ -628,9 +652,12 @@ export class Game {
     if (!f) fail('Kamu tidak sedang memancing.');
     const now = Date.now();
     if (now < f.biteAt) fail('Terlalu cepat! Ikannya kabur...');
-    if (now > f.biteAt + 1400) fail('Terlambat... ikannya lepas.');
+    // Pak Bayu's tips: a longer bite window and better odds for big fish.
+    const pro = perkActive(p.rel, 'bayu');
+    if (now > f.biteAt + (pro ? 1900 : 1400)) fail('Terlambat... ikannya lepas.');
     const r = this.rng();
-    const id = r < 0.02 ? 'fish_legend' : r < 0.15 ? 'fish_l' : r < 0.45 ? 'fish_m' : 'fish_s';
+    const odds = pro ? [0.03, 0.22, 0.52] : [0.02, 0.15, 0.45];
+    const id = r < odds[0] ? 'fish_legend' : r < odds[1] ? 'fish_l' : r < odds[2] ? 'fish_m' : 'fish_s';
     this.addItem(p, id);
     this.sendSelf(p);
     this.fx('splash', p.x, p.z, { pid: p.id, item: id });
@@ -658,11 +685,12 @@ export class Game {
 
   buy(p, { item, qty }) {
     this.requireNear(p, TOWN.store.door, 7, 'Kamu harus berada di Toko Umum.');
+    if (!storeOpen(this.world.minute)) fail(STORE_CLOSED);
     const def = ITEMS[item];
     qty = clampInt(qty, 1, 999);
     if (!def || !def.buy) fail('Barang tidak dijual.');
     if (def.type === 'seed' && def.season !== this.seasonId) fail('Benih ini tidak dijual musim ini.');
-    const cost = def.buy * qty;
+    const cost = storePrice(def.buy, p.rel) * qty;
     if (p.gold < cost) fail('Uangmu tidak cukup.');
     p.gold -= cost;
     this.addItem(p, item, qty);
@@ -673,13 +701,15 @@ export class Game {
 
   buyAnimal(p, { type, name }) {
     this.requireNear(p, TOWN.store.door, 7, 'Kamu harus berada di Toko Umum.');
+    if (!storeOpen(this.world.minute)) fail(STORE_CLOSED);
     const def = ANIMALS[type];
     if (!def) fail('Hewan tidak dikenal.');
     const plot = this.plots[p.plotId];
     const cap = BARN_LEVELS[plot.barnLevel][type];
     if (plot.animals.filter((a) => a.type === type).length >= cap) fail(`Kandang penuh! Tingkatkan kandang untuk menampung lebih banyak ${def.name}.`);
-    if (p.gold < def.price) fail('Uangmu tidak cukup.');
-    p.gold -= def.price;
+    const price = storePrice(def.price, p.rel);
+    if (p.gold < price) fail('Uangmu tidak cukup.');
+    p.gold -= price;
     name = String(name || '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 12) || ANIMAL_NAMES[Math.floor(this.rng() * ANIMAL_NAMES.length)];
     plot.animals.push({ id: uid('a'), type, name, aff: 10, fed: false, petted: false, prod: null });
     this.sendSelf(p);
@@ -687,13 +717,19 @@ export class Game {
     return { ok: true, msg: `${def.name} "${name}" dikirim ke kandangmu!` };
   }
 
+  upgradeCost(p, cost) {
+    return { ...cost, gold: upgradeGold(cost.gold, p.rel) };
+  }
+
   upgrade(p, { kind }) {
     this.requireNear(p, TOWN.store.door, 7, 'Kamu harus berada di Toko Umum.');
+    if (!storeOpen(this.world.minute)) fail(STORE_CLOSED);
     if (kind === 'can') {
       const next = CAN_LEVELS[p.canLevel + 1];
       if (!next) fail('Penyiram sudah maksimal.');
-      if (!this.hasCost(p, next.cost)) fail(`Butuh ${this.costText(next.cost)}.`);
-      this.payCost(p, next.cost);
+      const cost = this.upgradeCost(p, next.cost);
+      if (!this.hasCost(p, cost)) fail(`Butuh ${this.costText(cost)}.`);
+      this.payCost(p, cost);
       p.canLevel += 1;
       p.water = next.capacity;
       this.sendSelf(p);
@@ -703,8 +739,9 @@ export class Game {
       const plot = this.plots[p.plotId];
       const next = BARN_LEVELS[plot.barnLevel + 1];
       if (!next) fail('Kandang sudah maksimal.');
-      if (!this.hasCost(p, next.cost)) fail(`Butuh ${this.costText(next.cost)}.`);
-      this.payCost(p, next.cost);
+      const cost = this.upgradeCost(p, next.cost);
+      if (!this.hasCost(p, cost)) fail(`Butuh ${this.costText(cost)}.`);
+      this.payCost(p, cost);
       plot.barnLevel += 1;
       this.sendSelf(p);
       this.sendPlot(plot);
@@ -942,6 +979,242 @@ export class Game {
       if (!pl) continue;
       pl.tradeId = null;
       this.net.toPlayer(pid, 'trade:closed', { text: reason });
+    }
+  }
+
+  // -------------------------------------------------------------- villagers
+
+  npcAt(id) {
+    return npcState(id, this.world.minute, this.world.weather, this.minutesPerSecond, dayIndexOf(this.world));
+  }
+
+  relOf(p, id) {
+    p.rel = p.rel || {};
+    if (!p.rel[id]) p.rel[id] = { pts: 0, met: false, talked: -1, gifted: -1, ms: [], known: {} };
+    return p.rel[id];
+  }
+
+  // Villagers must be close by, except right after a chat (they wait for you).
+  requireNpc(p, id) {
+    const v = VILLAGERS[id];
+    if (!v) fail('Warga tidak dikenal.');
+    if (p.sleeping) fail('Kamu sedang tidur.');
+    const s = this.npcAt(id);
+    const chatting = p.npcChat && p.npcChat.npc === id && Date.now() - p.npcChat.at < 120000;
+    if (!chatting) {
+      if (dist(p.x, p.z, s.x, s.z) > 4.2) fail(`${v.name} terlalu jauh.`);
+      if (s.hidden && this.world.minute >= KNOCK_UNTIL) fail(`Sepertinya ${v.name} sudah tidur. Coba lagi besok.`);
+    }
+    p.npcChat = { npc: id, at: Date.now() };
+    return s;
+  }
+
+  addFriendship(p, id, delta) {
+    const r = this.relOf(p, id);
+    const v = VILLAGERS[id];
+    const before = hearts(r.pts);
+    r.pts = Math.max(0, Math.min(MAX_FRIENDSHIP, r.pts + delta));
+    const after = hearts(r.pts);
+    const events = [];
+    for (const m of MILESTONES) {
+      if (before < m && after >= m && !r.ms.includes(m)) {
+        r.ms.push(m);
+        const items = v.gifts[m] || null;
+        if (items) for (const [it, q] of Object.entries(items)) this.addItem(p, it, q);
+        events.push({ hearts: m, text: fillText(v.talk.ms[m], { name: p.name }), items, perk: m === 5 ? v.perk.text : null });
+      }
+    }
+    return events;
+  }
+
+  textVars(p) {
+    return { name: p.name };
+  }
+
+  pick(list) {
+    return list[Math.floor(this.rng() * list.length)];
+  }
+
+  contextLine(p, id) {
+    const ctx = VILLAGERS[id].talk.ctx || {};
+    const out = [];
+    const plot = this.plots[p.plotId];
+    const others = Object.values(this.players).filter((o) => o.id !== p.id);
+    for (const [kind, tpl] of Object.entries(ctx)) {
+      let vars = null;
+      if (kind === 'hot' && this.market.hot) vars = { hot: `${ITEMS[this.market.hot].icon} ${ITEMS[this.market.hot].name}` };
+      if (kind === 'tomorrow') vars = { tomorrow: WEATHER[this.world.tomorrow].name.toLowerCase() };
+      if (kind === 'other' && others.length) vars = { other: this.pick(others).name };
+      if (kind === 'animal' && plot.animals.length) vars = { animal: this.pick(plot.animals).name };
+      if (kind === 'ready' && plot.tiles.some((t) => t.c && !t.c.withered && t.c.g >= CROPS[t.c.id].days)) vars = {};
+      if (kind === 'stumps') {
+        const n = plot.tiles.filter((t) => t.t === 'stump').length;
+        if (n) vars = { n };
+      }
+      if ((kind === 'richest' || kind === 'richestYou') && others.length) {
+        const top = Object.values(this.players).reduce((a, b) => (b.gold > a.gold ? b : a));
+        if (kind === 'richestYou' && top.id === p.id) vars = {};
+        if (kind === 'richest' && top.id !== p.id) vars = { richest: top.name };
+      }
+      if (vars) out.push(fillText(tpl, { ...this.textVars(p), ...vars }));
+    }
+    return out;
+  }
+
+  requestText(id, req) {
+    const it = ITEMS[req.item];
+    return fillText(VILLAGERS[id].talk.request, { qty: req.qty, item: `${it.icon} ${it.name}`, reward: req.reward });
+  }
+
+  activeRequest(id) {
+    return this.requests.find((q) => q.npc === id && !q.doneBy) || null;
+  }
+
+  pickLine(p, id) {
+    const t = VILLAGERS[id].talk;
+    const m = this.world.minute;
+    const tod = m < 11 * 60 ? 'morning' : m < 17 * 60 ? 'day' : m < 21 * 60 ? 'evening' : 'night';
+    const req = this.activeRequest(id);
+    if (req && this.rng() < 0.5) return this.requestText(id, req);
+    const pool = [...t[tod], ...t[this.seasonId]];
+    const w = this.world.weather;
+    if (w === 'rain' || w === 'storm') pool.push(...t.rain, ...t.rain);
+    if (w === 'snow') pool.push(...t.snow, ...t.snow);
+    const hh = hearts(this.relOf(p, id).pts);
+    pool.push(...(hh >= 6 ? t.h6 : hh >= 3 ? t.h3 : t.h0));
+    const ctx = this.contextLine(p, id);
+    pool.push(...ctx, ...ctx);
+    return this.pick(pool);
+  }
+
+  npcTalk(p, { npc }) {
+    const s = this.requireNpc(p, npc);
+    const v = VILLAGERS[npc];
+    const r = this.relOf(p, npc);
+    const today = dayIndexOf(this.world);
+    let text;
+    if (!r.met) {
+      r.met = true;
+      text = v.talk.intro;
+    } else if (isBirthday(npc, this.world) && r.talked !== today) text = v.talk.birthday;
+    else text = this.pickLine(p, npc);
+    text = fillText(text, this.textVars(p));
+    if (s.hidden) text = `(dari balik pintu) ${text}`;
+    let events = [];
+    let gained = 0;
+    if (r.talked !== today) {
+      r.talked = today;
+      gained = TALK_POINTS;
+      events = this.addFriendship(p, npc, TALK_POINTS);
+    }
+    this.sendSelf(p);
+    return { ok: true, npc, text, gained, events, pts: r.pts };
+  }
+
+  npcGift(p, { npc, item }) {
+    const s = this.requireNpc(p, npc);
+    const v = VILLAGERS[npc];
+    if (!ITEMS[item]) fail('Barang tidak dikenal.');
+    if (!(p.inv[item] > 0)) fail('Kamu tidak punya barang itu.');
+    const r = this.relOf(p, npc);
+    r.met = true;
+    const today = dayIndexOf(this.world);
+    if (r.gifted === today) return { ok: true, npc, text: fillText(v.talk.already, this.textVars(p)), reaction: 'already', events: [], pts: r.pts };
+    this.takeItem(p, item);
+    const reaction = giftReaction(npc, item);
+    const bday = isBirthday(npc, this.world);
+    let delta = GIFT_POINTS[reaction];
+    if (bday) delta = delta > 0 ? delta * 3 : delta * 2;
+    r.gifted = today;
+    r.known[item] = reaction;
+    const events = this.addFriendship(p, npc, delta);
+    const text = bday && delta > 0 ? v.talk.birthdayGift : this.pick(v.talk[reaction]);
+    this.fx(`npc_${reaction}`, s.x, s.z, { pid: p.id, npc });
+    this.sendSelf(p);
+    return { ok: true, npc, text: fillText(text, this.textVars(p)), reaction, delta, events, pts: r.pts, birthday: bday };
+  }
+
+  npcDeliver(p, { npc, id }) {
+    const s = this.requireNpc(p, npc);
+    const v = VILLAGERS[npc];
+    const req = this.requests.find((q) => q.id === id && q.npc === npc);
+    if (!req) fail('Pesanan tidak ditemukan.');
+    if (req.doneBy) fail(`Pesanan ini sudah diselesaikan oleh ${req.doneBy}.`);
+    if (!this.takeItem(p, req.item, req.qty)) fail(`Kamu butuh ${req.qty} ${ITEMS[req.item].name}.`);
+    p.gold += req.reward;
+    req.doneBy = p.name;
+    req.doneById = p.id;
+    const events = this.addFriendship(p, npc, REQUEST_POINTS);
+    this.relOf(p, npc).met = true;
+    this.sendSelf(p);
+    this.sendPlayerInfo(p);
+    this.sendRequests();
+    this.fx('npc_love', s.x, s.z, { pid: p.id, npc });
+    this.net.broadcast('feed', { text: `📜 ${p.name} menyelesaikan pesanan ${v.name}! (+${req.reward}G)` });
+    return { ok: true, npc, text: fillText(v.talk.thanks, this.textVars(p)), reward: req.reward, events, pts: this.relOf(p, npc).pts };
+  }
+
+  makeRequest(npc, today) {
+    const v = VILLAGERS[npc];
+    const season = this.seasonId;
+    // Crops are only requested once there has been time to grow them this season.
+    const ok = (id) => requestable(id, season, ITEMS) && (ITEMS[id].type !== 'crop' || this.world.day > CROPS[id].days);
+    let pool = [...v.loves, ...v.likes].filter(ok);
+    if (!pool.length) pool = Object.keys(ITEMS).filter((id) => ok(id) && ITEMS[id].type !== 'food');
+    if (!pool.length) return null;
+    const item = this.pick(pool);
+    const it = ITEMS[item];
+    const unit = it.sell || Math.round((it.buy || 50) / 2);
+    const max = it.type === 'material' ? 30 : item === 'fish_l' || item === 'gem' ? 2 : 12;
+    const qty = Math.max(1, Math.min(max, Math.round((400 + this.rng() * 600) / unit)));
+    const reward = Math.round((unit * qty * 1.8 + 120) / 10) * 10;
+    return { id: uid('r'), npc, item, qty, reward, expires: today + 2, doneBy: null };
+  }
+
+  // Drops finished/expired requests and tops the board up. Returns how many were added.
+  refreshRequests() {
+    const today = dayIndexOf(this.world);
+    this.requests = this.requests.filter((q) => !q.doneBy && q.expires >= today);
+    const busy = new Set(this.requests.map((q) => q.npc));
+    const free = VILLAGER_IDS.filter((id) => !busy.has(id));
+    let added = 0;
+    while (this.requests.length < MAX_REQUESTS && free.length) {
+      const npc = free.splice(Math.floor(this.rng() * free.length), 1)[0];
+      const q = this.makeRequest(npc, today);
+      if (q) {
+        this.requests.push(q);
+        added++;
+      }
+    }
+    return added;
+  }
+
+  villagerMorning(reports) {
+    const notes = [];
+    for (const id of VILLAGER_IDS) {
+      if (isBirthday(id, this.world)) {
+        notes.push(`🎂 Hari ini ulang tahun ${VILLAGERS[id].name}! Hadiah hari ini bernilai 3×.`);
+        this.net.broadcast('feed', { text: `🎂 Hari ini ulang tahun ${VILLAGERS[id].name}!` });
+      }
+    }
+    const added = this.refreshRequests();
+    if (added) notes.push(`📜 ${added} pesanan warga baru di Papan Pesanan.`);
+    for (const p of Object.values(this.players)) {
+      const rep = reports[p.id];
+      rep.notes.push(...notes);
+      if (perkActive(p.rel, 'lina')) {
+        let n = 0;
+        for (const t of this.plots[p.plotId].tiles) {
+          if (n >= 9) break;
+          if (t.t === 'soil' && t.c && !t.c.withered && !t.w) { t.w = 1; n++; }
+        }
+        if (n) rep.notes.push(`🌸 Lina menyiram ${n} tanamanmu pagi ini.`);
+      }
+      if (perkActive(p.rel, 'dewi') && this.rng() < 0.4) {
+        const item = this.pick(FORAGE_BY_SEASON[this.seasonId]);
+        this.addItem(p, item);
+        rep.notes.push(`🎀 Dewi meninggalkan ${ITEMS[item].icon} ${ITEMS[item].name} untukmu.`);
+      }
     }
   }
 

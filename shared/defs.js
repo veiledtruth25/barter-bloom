@@ -155,7 +155,25 @@ export const TOWN = {
   market: { x: 12, z: -9, w: 9, d: 6, door: { x: 12, z: -5.2 } },
   fountain: { x: 0, z: 0, r: 2 },
   pond: { x: 24, z: 6, r: 5.5 },
+  // Wooden fishing pier on the west bank of the pond.
+  pier: { x0: 18.3, x1: 19.9, z0: 4.9, z1: 7.1, y: 0.31 },
+  // Plaza benches: [x, z, facing].
+  benches: [[-4.5, 5.5, Math.PI + 0.6], [4.5, 5.5, Math.PI - 0.6], [-5.5, -3, 1.2], [5.5, -3, -1.2]],
+  // Shop counter where the shopkeeper stands during opening hours.
+  counter: { x: -9.4, z: -4.4, w: 1.6, d: 0.6 },
+  board: { x: 2.6, z: -12.6 },
+  // Villagers' homes (doors face the main road).
+  houses: {
+    mayor: { x: -14, z: 10.5, w: 6, d: 5, door: 'north' },
+    hut: { x: 12.5, z: 12.5, w: 5, d: 4.5, door: 'north' },
+    workshop: { x: -24, z: -5.6, w: 6, d: 4, door: 'south' },
+  },
 };
+
+export const STORE_HOURS = { open: 8 * 60, close: 18 * 60 };
+export function storeOpen(minute) {
+  return minute >= STORE_HOURS.open && minute < STORE_HOURS.close;
+}
 
 export const WILD_ZONES = [
   { x0: -58, z0: -15, x1: -30, z1: 15 },
@@ -207,6 +225,9 @@ export function colliders() {
   }
   box(TOWN.store);
   box(TOWN.market);
+  for (const hse of Object.values(TOWN.houses)) box(hse);
+  box(TOWN.counter);
+  boxes.push({ x0: TOWN.board.x - 0.25, z0: TOWN.board.z - 0.95, x1: TOWN.board.x + 0.25, z1: TOWN.board.z + 0.95 });
   circles.push({ x: TOWN.fountain.x, z: TOWN.fountain.z, r: TOWN.fountain.r });
   circles.push({ x: TOWN.pond.x, z: TOWN.pond.z, r: TOWN.pond.r - 0.4 });
   for (const t of WILD_TREES) circles.push({ x: t.x, z: t.z, r: 0.55 * t.s });
@@ -236,6 +257,12 @@ export function resolveCollision(x, z, col, radius = 0.35) {
     }
   }
   return [x, z];
+}
+
+// Height of walkable surfaces (only the pier is raised).
+export function groundHeight(x, z) {
+  const P = TOWN.pier;
+  return x >= P.x0 && x <= P.x1 && z >= P.z0 && z <= P.z1 ? P.y : 0;
 }
 
 export function nearWater(x, z, extra = 1.8) {

@@ -105,6 +105,9 @@ io.on('connection', (socket) => {
   handle(socket, 'trade:confirm', (p) => game.tradeConfirm(p));
   handle(socket, 'trade:cancel', (p) => game.tradeCancel(p));
   handle(socket, 'chat', (p, d) => game.chat(p, d.text));
+  handle(socket, 'npc:talk', (p, d) => game.npcTalk(p, d));
+  handle(socket, 'npc:gift', (p, d) => game.npcGift(p, d));
+  handle(socket, 'npc:deliver', (p, d) => game.npcDeliver(p, d));
   handle(socket, 'anim', (p, d) => {
     socket.broadcast.emit('anim', { id: p.id, kind: String(d.kind || '').slice(0, 12), tool: String(d.tool || '').slice(0, 12) });
     return null;

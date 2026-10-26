@@ -115,6 +115,7 @@ test('animals produce when fed and everyone sleeping skips the day', () => {
   const { game, players: [p] } = setup();
   p.x = TOWN.store.door.x; p.z = TOWN.store.door.z;
   p.gold = 5000;
+  game.world.minute = 9 * 60; // store opening hours
   game.buyAnimal(p, { type: 'chicken', name: 'Kiko' });
   const L = plotLayout(p.plotId);
   p.x = L.barnDoor.x; p.z = L.barnDoor.z;
