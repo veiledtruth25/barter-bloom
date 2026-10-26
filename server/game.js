@@ -13,6 +13,26 @@ const uid = (p) => p + crypto.randomBytes(5).toString('hex');
 const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
 const clampInt = (n, lo, hi) => Math.max(lo, Math.min(hi, Math.floor(Number(n) || 0)));
 
+const HEX = /^#[0-9a-f]{6}$/i;
+const LOOK_OPTIONS = {
+  hairStyle: ['short', 'spiky', 'long', 'bun', 'bald'],
+  hat: ['straw', 'cap', 'bandana', 'none'],
+};
+
+export function sanitizeLook(look, shirt) {
+  const l = look && typeof look === 'object' ? look : {};
+  const pick = (v, list) => (list.includes(v) ? v : list[0]);
+  const col = (v, d) => (HEX.test(v || '') ? v : d);
+  return {
+    skin: col(l.skin, '#f2c7a0'),
+    hair: col(l.hair, '#5a3a22'),
+    hairStyle: pick(l.hairStyle, LOOK_OPTIONS.hairStyle),
+    hat: pick(l.hat, LOOK_OPTIONS.hat),
+    shirt: col(l.shirt, shirt),
+    pants: col(l.pants, '#3d5a8a'),
+  };
+}
+
 class GameError extends Error {}
 const fail = (msg) => { throw new GameError(msg); };
 
@@ -48,6 +68,7 @@ export class Game {
     this.wild = data.wild;
     this.market = data.market;
     for (const p of Object.values(this.players)) {
+      p.look = p.look || sanitizeLook(null, p.color);
       p.online = false;
       p.sleeping = false;
       p.fish = null;
@@ -85,7 +106,7 @@ export class Game {
   // ----------------------------------------------------------- serialization
 
   publicPlayer(p) {
-    return { id: p.id, name: p.name, color: p.color, plotId: p.plotId, online: p.online, sleeping: p.sleeping, gold: p.gold, x: p.x, z: p.z, ry: p.ry || 0 };
+    return { id: p.id, name: p.name, color: p.color, look: p.look, plotId: p.plotId, online: p.online, sleeping: p.sleeping, gold: p.gold, x: p.x, z: p.z, ry: p.ry || 0 };
   }
 
   privateState(p) {
@@ -138,11 +159,14 @@ export class Game {
 
   // ------------------------------------------------------------------ joins
 
-  join({ name, token, color }) {
+  join({ name, token, color, look }) {
     name = String(name || '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16);
     if (token) {
       const existing = Object.values(this.players).find((p) => p.token === token);
-      if (existing) return existing;
+      if (existing) {
+        if (look) existing.look = sanitizeLook(look, existing.color);
+        return existing;
+      }
     }
     if (name.length < 2) fail('Nama minimal 2 karakter.');
     if (Object.values(this.players).some((p) => p.name.toLowerCase() === name.toLowerCase())) {
@@ -153,12 +177,14 @@ export class Game {
     const L = plotLayout(plot.id);
     const p = {
       id: uid('p'), token: crypto.randomBytes(16).toString('hex'), name,
-      color: /^#[0-9a-f]{6}$/i.test(color || '') ? color : COLORS[plot.id % COLORS.length],
+      color: HEX.test(color || '') ? color : COLORS[plot.id % COLORS.length],
       gold: START_GOLD, stamina: MAX_STAMINA, water: CAN_LEVELS[0].capacity, canLevel: 0,
       inv: { ...START_ITEMS }, bin: {}, plotId: plot.id,
+      look: null,
       x: L.houseDoor.x + 1, z: L.houseDoor.z, ry: 0, online: false, sleeping: false,
       lastReport: null, fish: null, tradeId: null, tradeReq: null,
     };
+    p.look = sanitizeLook(look, p.color);
     plot.ownerId = p.id;
     this.players[p.id] = p;
     this.sendPlot(plot);

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Barter Bloom — Desa Petani Multiplayer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="labels"></div>
+
+  <div id="hud" class="hidden">
+    <div class="hud-tl">
+      <div class="card date-card">
+        <div class="season-badge" id="seasonIcon">🌸</div>
+        <div class="date-info">
+          <div class="date-main" id="dateText">Musim Semi, Hari 1</div>
+          <div class="date-sub" id="yearText">Tahun 1</div>
+        </div>
+        <div class="clock">
+          <div class="clock-time" id="clockText">06:00</div>
+          <div class="clock-weather" id="weatherText">☀️</div>
+        </div>
+      </div>
+      <div class="card stamina-card">
+        <div class="face" id="faceIcon">😊</div>
+        <div class="bars">
+          <div class="bar-label"><span>Stamina</span><span id="staminaText">100</span></div>
+          <div class="bar"><div class="bar-fill stamina" id="staminaBar"></div></div>
+          <div class="bar-label"><span>💧 Air</span><span id="waterText">20</span></div>
+          <div class="bar small"><div class="bar-fill water" id="waterBar"></div></div>
+        </div>
+      </div>
+      <div class="hot-item card" id="hotItem"></div>
+    </div>
+
+    <div class="hud-tr">
+      <div class="card gold-card"><span class="coin">G</span><span id="goldText">0</span></div>
+      <div class="minimap-wrap card"><canvas id="minimap" width="200" height="150"></canvas></div>
+      <div class="hud-buttons">
+        <button class="hud-btn" data-open="inventory" title="Tas (I)">🎒<kbd>I</kbd></button>
+        <button class="hud-btn" data-open="market" title="Pasar (M)">⚖️<kbd>M</kbd></button>
+        <button class="hud-btn" data-open="players" title="Pemain (P)">👥<kbd>P</kbd></button>
+        <button class="hud-btn" data-open="help" title="Bantuan (H)">❔<kbd>H</kbd></button>
+        <button class="hud-btn" id="muteBtn" title="Suara">🔊</button>
+      </div>
+    </div>
+
+    <div id="feed"></div>
+    <div id="prompt" class="prompt hidden"></div>
+    <div id="fishMeter" class="fish-meter hidden"></div>
+    <div id="hotbar"></div>
+    <div id="chat">
+      <div id="chatLog"></div>
+      <input id="chatInput" placeholder="Tekan Enter untuk mengobrol…" maxlength="160" autocomplete="off" />
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+  <div id="modalRoot"></div>
+  <div id="fade"><div class="fade-content" id="fadeContent"></div></div>
+
+  <div id="login">
+    <div class="login-panel">
+      <div class="logo">
+        <div class="logo-icon">🌾</div>
+        <h1>Barter <span>Bloom</span></h1>
+        <p>Bertani, beternak, memancing &amp; berdagang bersama teman di desa 3D.</p>
+      </div>
+      <div class="login-body">
+        <div class="preview-wrap">
+          <canvas id="preview" width="260" height="300"></canvas>
+          <div class="preview-hint">Seret untuk memutar</div>
+        </div>
+        <form id="loginForm" autocomplete="off">
+          <label>Nama Petani
+            <input id="nameInput" maxlength="16" placeholder="mis. Budi" required />
+          </label>
+          <div class="custom" id="customizer"></div>
+          <button class="btn primary big" type="submit" id="joinBtn">Mulai Bertani 🌱</button>
+          <div class="login-error" id="loginError"></div>
+          <div class="login-note">Progresmu tersimpan otomatis di server. Masuk lagi dari perangkat ini untuk melanjutkan.</div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

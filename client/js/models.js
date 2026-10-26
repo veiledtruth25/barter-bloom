@@ -347,64 +347,6 @@ export function addFountain(b, x, z) {
 
 // -------------------------------------------------------------- characters
 
-export function makeAvatar(color) {
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  root.add(body);
-  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: 0.85 });
-  const shirt = mat(color);
-  const skin = mat(0xf2c7a0);
-  const pants = mat(0x3d5a8a);
-  const hat = mat(0xe8c35a);
-  const mk = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; return o; };
-
-  const torso = mk(new THREE.CylinderGeometry(0.26, 0.3, 0.6, 8), shirt, 0, 0.95, 0);
-  body.add(torso);
-  body.add(mk(new THREE.BoxGeometry(0.5, 0.12, 0.08), pants, 0, 0.72, 0.2)); // overall strap
-  const head = mk(new THREE.SphereGeometry(0.26, 10, 8), skin, 0, 1.48, 0);
-  body.add(head);
-  const eyeM = mat(0x2a2a2a);
-  head.add(mk(new THREE.SphereGeometry(0.035, 6, 4), eyeM, -0.09, 0.03, 0.23));
-  head.add(mk(new THREE.SphereGeometry(0.035, 6, 4), eyeM, 0.09, 0.03, 0.23));
-  const blush = mat(0xf29a8a);
-  head.add(mk(new THREE.SphereGeometry(0.04, 6, 4), blush, -0.15, -0.05, 0.19));
-  head.add(mk(new THREE.SphereGeometry(0.04, 6, 4), blush, 0.15, -0.05, 0.19));
-  // Straw hat, a nod to the classic farmer look.
-  const brim = mk(new THREE.CylinderGeometry(0.46, 0.48, 0.05, 14), hat, 0, 0.17, 0);
-  const crown = mk(new THREE.CylinderGeometry(0.22, 0.26, 0.2, 12), hat, 0, 0.28, 0);
-  const band = mk(new THREE.CylinderGeometry(0.265, 0.265, 0.06, 12), shirt, 0, 0.22, 0);
-  head.add(brim, crown, band);
-
-  const limb = (m, len, r) => {
-    const g = new THREE.Group();
-    const seg = mk(new THREE.CylinderGeometry(r, r * 0.9, len, 6), m, 0, -len / 2, 0);
-    g.add(seg);
-    return g;
-  };
-  const armL = limb(shirt, 0.5, 0.08); armL.position.set(-0.34, 1.2, 0);
-  const armR = limb(shirt, 0.5, 0.08); armR.position.set(0.34, 1.2, 0);
-  armL.children[0].add(mk(new THREE.SphereGeometry(0.08, 6, 4), skin, 0, -0.27, 0));
-  armR.children[0].add(mk(new THREE.SphereGeometry(0.08, 6, 4), skin, 0, -0.27, 0));
-  const legL = limb(pants, 0.62, 0.1); legL.position.set(-0.13, 0.66, 0);
-  const legR = limb(pants, 0.62, 0.1); legR.position.set(0.13, 0.66, 0);
-  const boot = mat(0x5a3a22);
-  legL.children[0].add(mk(new THREE.BoxGeometry(0.18, 0.12, 0.26), boot, 0, -0.32, 0.04));
-  legR.children[0].add(mk(new THREE.BoxGeometry(0.18, 0.12, 0.26), boot, 0, -0.32, 0.04));
-  body.add(armL, armR, legL, legR);
-
-  const toolSlot = new THREE.Group();
-  toolSlot.position.set(0, -0.5, 0.05);
-  armR.add(toolSlot);
-
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18, depthWrite: false }));
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.02;
-  root.add(shadow);
-
-  root.userData = { body, head, armL, armR, legL, legR, toolSlot, shirt, walk: 0, swing: 0, tool: null };
-  return root;
-}
-
 const toolMeshes = {};
 export function toolModel(id) {
   if (toolMeshes[id] === undefined) {
