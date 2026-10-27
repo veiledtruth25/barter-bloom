@@ -65,7 +65,7 @@ export class Game {
       weather: 'sunny', tomorrow: 'sunny',
     };
     this.players = {};
-    this.plots = PLOT_CENTERS.map((_, i) => ({ id: i, ownerId: null, tiles: this.freshField(), barnLevel: 0, animals: [] }));
+    this.plots = PLOT_CENTERS.map((_, i) => ({ id: i, ownerId: null, tiles: this.freshField(), barnLevel: 0, houseLevel: 0, building: null, animals: [] }));
     this.wild = [];
     this.market = { listings: [], mult: {}, hot: null, trend: {} };
     this.requests = [];
