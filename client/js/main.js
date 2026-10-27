@@ -1,17 +1,17 @@
 import * as THREE from 'three';
 import {
   SEASONS, ITEMS, CROPS, TOOLS, REACH, FIELD_W, FIELD_H, PLOT_CENTERS, TOWN, plotLayout, colliders, resolveCollision,
-  nearWater, groundHeight, storeOpen,
+  nearWater, groundHeight, SHOPS, shopOpen, shopHours, festivalOf, toolArea,
 } from '/shared/defs.js';
-import { VILLAGERS } from '/shared/villagers.js';
+import { VILLAGERS, HOUSES } from '/shared/villagers.js';
 import { Villagers, renderPortraits } from './villagers.js';
 import { World } from './world.js';
 import { FarmRenderer, makeTargetMarker } from './farm.js';
 import { makeAvatar, animateAvatar, setTool, swing, hop, LOOK_CHOICES, defaultLook } from './avatar.js';
-import { Particles, Ambience, Sfx, FX_STYLE } from './fx.js';
+import { Particles, Ambience, Sfx, FX_STYLE, firework } from './fx.js';
 import {
   initUI, toast, feed, updateHud, updateHotbar, updateClock, showPrompt, fishMeter, addChat, drawMinimap, openPanel,
-  closePanel, panelOpen, refreshPanel, showDayStart, advanceDialogue, h,
+  closePanel, panelOpen, refreshPanel, showDayStart, advanceDialogue, inDialogue, festivalLive, h,
 } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -56,6 +56,7 @@ scene.add(fishLine);
 
 const G = {
   socket: null, self: null, me: null, players: new Map(), plots: [], wild: [], market: { listings: [], prices: {}, hot: null },
+  village: { fest: null, marriages: {} }, homes: {},
   time: { day: 1, season: 0, year: 1, minute: 360, weather: 'sunny', tomorrow: 'sunny', rate: 2 },
   timeSync: performance.now(), tool: 'hoe', selectedItem: null, uiOpen: false, trade: null, fishing: null, sfx: new Sfx(),
   cam: { yaw: 0.6, pitch: 0.75, dist: 15, targetDist: 15 },
@@ -182,20 +183,40 @@ function connect(name, look) {
     G.self = s;
     if (prevGold !== undefined && s.gold > prevGold && G.me) floatText(G.me.position.x, 2.6, G.me.position.z, `+${s.gold - prevGold}G`, 'gold');
     updateHud();
-    refreshPanel('inventory', 'shop', 'ship', 'barn', 'market', 'trade', 'sleep', 'villagers');
+    refreshPanel('inventory', 'shop', 'ship', 'barn', 'market', 'trade', 'sleep', 'villagers', 'festival');
   });
   socket.on('requests', (list) => setRequests(list));
   socket.on('plot', (plot) => {
     G.plots[plot.id] = plot;
     farm.updatePlot(plot);
     world.setPlotOwner(plot.id, plot.ownerName, plot.color);
-    if (plot.id === G.self?.plotId) refreshPanel('barn', 'shop');
+    world.updatePlotStructures(plot);
+    if (plot.id === G.self?.plotId) refreshPanel('barn', 'shop', 'festival');
+  });
+  socket.on('village', (v) => {
+    G.village = v;
+    updateHomes();
+    refreshPanel('festival', 'villagers', 'sleep');
+  });
+  socket.on('wedding', ({ pid, name, npc }) => {
+    const v = VILLAGERS[npc];
+    toast(`💒 ${name} dan ${v.name} menikah! Selamat!`, 'gold');
+    G.sfx.play('morning');
+    // Fireworks over the plaza for everyone; the happy couple gets a shower of petals.
+    celebrate(0, 0, 9);
+    if (pid === G.self?.id && G.me) {
+      hop(G.me);
+      particles.burst(G.me.position.x, 1.6, G.me.position.z, FX_STYLE.wedding);
+      setTimeout(() => toast(`💍 ${v.name} akan tinggal di rumah ladangmu mulai besok. Setiap pagi ada bekal cinta untukmu!`, 'gold'), 1800);
+    }
   });
   socket.on('wild', (w) => { G.wild = w; farm.updateWild(w); });
   socket.on('market', (m) => { G.market = m; refreshPanel('market', 'ship', 'inventory'); });
   socket.on('time', (t) => setTime(t));
   socket.on('player', (info) => {
+    const known = G.players.has(info.id);
     ensurePlayer(info);
+    if (!known) updateHomes();
     refreshPanel('players', 'sleep');
   });
   socket.on('pos', (list) => {
@@ -218,6 +239,16 @@ function connect(name, look) {
   });
   socket.on('fx', (f) => {
     const style = FX_STYLE[f.type];
+    if (f.type === 'goddess') {
+      // The Harvest Goddess rises from her spring to accept an offering.
+      villagers.showGoddess(scene);
+      particles.burst(TOWN.spring.x, 0.6, TOWN.spring.z, style);
+      return;
+    }
+    if (f.type === 'wedding') {
+      particles.burst(f.x, 1.8, f.z, style);
+      return;
+    }
     if (f.type.startsWith('npc_')) {
       // Villager reaction to a gift: hearts (or a grumble) above their head.
       const emoji = { npc_love: '💖', npc_like: '😊', npc_neutral: '🙂', npc_dislike: '💢' }[f.type];
@@ -274,6 +305,17 @@ function setTime(t) {
   G.time = t;
   G.timeSync = performance.now();
   if (t.season !== oldSeason || world.season !== SEASONS[t.season].id) applySeason();
+  // Plaza decorations go up on festival days.
+  world.setFestival(festivalOf(t.season, t.day));
+}
+
+// Married villagers live on their spouse's farm: { villagerId: plotId }.
+function updateHomes() {
+  G.homes = {};
+  for (const [npc, pid] of Object.entries(G.village?.marriages || {})) {
+    const plotId = G.players.get(pid)?.info.plotId;
+    if (plotId !== undefined) G.homes[npc] = plotId;
+  }
 }
 
 function applySeason() {
@@ -294,11 +336,14 @@ function onJoined(res) {
     G.plots[pl.id] = pl;
     farm.updatePlot(pl);
     world.setPlotOwner(pl.id, pl.ownerName, pl.color);
+    world.updatePlotStructures(pl);
   }
   G.wild = w.wild;
   farm.updateWild(w.wild);
   setRequests(w.requests);
   for (const p of w.players) ensurePlayer(p);
+  G.village = w.village || { fest: null, marriages: {} };
+  updateHomes();
   const me = G.players.get(G.self.id);
   G.me = me.avatar;
   if (G.playing) { updateHud(); return; } // reconnect: state refreshed, UI already up
@@ -338,7 +383,7 @@ window.addEventListener('keydown', (e) => {
   }
   const k = e.key.toLowerCase();
   if (k === 'escape') { if (G.uiOpen) closePanel(); return; }
-  if (panelOpen('dialogue')) {
+  if (inDialogue()) {
     if ([' ', 'e', 'f', 'enter'].includes(k)) { e.preventDefault(); if (!e.repeat) advanceDialogue(); }
     return;
   }
@@ -442,9 +487,16 @@ function updateMarker(t) {
     const own = t.tile.plotId === G.self.plotId;
     const seed = G.tool === 'hand' && G.selectedItem && ITEMS[G.selectedItem]?.type === 'seed';
     marker.visible = true;
-    marker.position.set(t.x, 0, t.z);
-    const s = seed && own ? 3 : 1;
-    marker.scale.set(s, 1, s);
+    // Seeds and upgraded tools cover a 3×3 square, or a line of 3 tiles leading away from you.
+    const area = seed ? 'square' : toolArea(G.tool, G.self.tools?.[G.tool] || 0);
+    let x = t.x, z = t.z, sx = 1, sz = 1;
+    if (own && area === 'square') sx = sz = 3;
+    else if (own && area === 'line') {
+      const dx = t.x - G.me.position.x, dz = t.z - G.me.position.z;
+      if (Math.abs(dx) >= Math.abs(dz)) { sx = 3; x += Math.sign(dx) || 1; } else { sz = 3; z += Math.sign(dz) || 1; }
+    }
+    marker.position.set(x, 0, z);
+    marker.scale.set(sx, 1, sz);
     const color = own ? 0xffffff : G.tool === 'can' ? 0x9ad0ff : 0xff6b5a;
     L.line.material.color.set(color);
     L.fill.material.color.set(color);
@@ -485,23 +537,33 @@ async function useTool() {
 function interactables() {
   const out = [];
   const L = plotLayout(G.self.plotId);
-  out.push({ x: L.houseDoor.x, z: L.houseDoor.z, r: 2.2, label: G.self.sleeping ? 'Bangun' : 'Masuk rumah (tidur)', run: () => openPanel('sleep') });
+  out.push({ x: L.houseDoor.x, z: L.houseDoor.z, r: 2.2, label: G.self.sleeping ? 'Bangun' : 'Masuk rumah', run: () => openPanel('sleep') });
   out.push({ x: L.barnDoor.x, z: L.barnDoor.z, r: 2.4, label: 'Buka kandang', run: () => openPanel('barn') });
   out.push({ x: L.bin.x, z: L.bin.z, r: 2.4, label: 'Kotak pengiriman', run: () => openPanel('ship') });
+  const minute = currentMinute();
+  const fest = festivalOf(G.time.season, G.time.day);
   const doors = villagers.doors();
-  const storeDoor = doors.find((d) => d.house === 'store');
-  if (storeOpen(currentMinute())) {
-    out.push({ x: TOWN.store.door.x, z: TOWN.store.door.z, r: 3, label: 'Masuk Toko Umum', run: () => openPanel('shop') });
-  } else if (storeDoor?.ids.length) {
-    out.push({ x: TOWN.store.door.x, z: TOWN.store.door.z, r: 3, label: 'Toko tutup — ketuk pintu', run: () => knock(storeDoor) });
-  } else {
-    out.push({ x: TOWN.store.door.x, z: TOWN.store.door.z, r: 3, label: 'Toko Umum tutup (buka 08:00–18:00)', run: () => openPanel('shop') });
+  // Shops are open while their keeper is at the counter; otherwise knock if they are home.
+  for (const [sid, s] of Object.entries(SHOPS)) {
+    const house = Object.keys(HOUSES).find((k) => HOUSES[k].shop === sid);
+    const door = doors.find((d) => d.house === house);
+    const at = { x: s.door.x, z: s.door.z, r: 3 };
+    if (shopOpen(sid, minute, fest)) out.push({ ...at, label: `Masuk ${s.name}`, run: () => openPanel('shop', { shop: sid }) });
+    else if (door?.ids.length) out.push({ ...at, label: `${s.name} tutup — ketuk pintu`, run: () => knock(door) });
+    else out.push({ ...at, label: `${s.name} tutup (buka ${shopHours(sid)})`, run: () => openPanel('shop', { shop: sid }) });
   }
   out.push({ x: TOWN.market.door.x, z: TOWN.market.door.z, r: 3, label: 'Masuk Pasar Pemain', run: () => openPanel('market') });
   out.push({ x: TOWN.board.x - 0.9, z: TOWN.board.z, r: 2.6, label: 'Lihat Papan Pesanan', run: () => openPanel('villagers', { tab: 'requests' }) });
   for (const d of doors) {
-    if (d.house === 'store' || !d.ids.length) continue;
+    // Your own spouse is greeted from inside the house (see the house panel).
+    if (HOUSES[d.house]?.shop || !d.ids.length || d.plot === G.self.plotId) continue;
     out.push({ x: d.x, z: d.z, r: 2.4, label: `Ketuk pintu ${d.name}`, run: () => knock(d) });
+  }
+  // The Harvest Goddess' spring in the eastern woods.
+  out.push({ x: TOWN.spring.x, z: TOWN.spring.z, r: TOWN.spring.r + 2.4, label: '✨ Panggil Dewi Panen', run: () => openGoddess() });
+  // Festival activities at the plaza fountain.
+  if (fest && (festivalLive(fest, minute) || (fest.activity === 'contest' && minute >= fest.start))) {
+    out.push({ x: TOWN.fountain.x, z: TOWN.fountain.z, r: 4.6, label: `${fest.icon} Ikut ${fest.name}`, run: () => openPanel('festival') });
   }
   const me = G.me.position;
   const npc = villagers.nearest(me.x, me.z, 2.6);
@@ -520,6 +582,35 @@ function knock(door) {
   G.sfx.play('knock');
   if (door.ids.length === 1) G.talkTo(door.ids[0]);
   else openPanel('knock', { name: door.name, ids: door.ids });
+}
+
+// Calling the Harvest Goddess: she rises from the spring and stays while you talk.
+function openGoddess() {
+  villagers.showGoddess(scene, true);
+  particles.burst(TOWN.spring.x, 0.6, TOWN.spring.z, FX_STYLE.goddess);
+  G.sfx.play('morning');
+  openPanel('goddess');
+}
+G.endGoddess = () => villagers.releaseGoddess();
+
+// Fireworks: the summer festival over the pond, and weddings over the plaza.
+let fireworkTimer = 0;
+const celebration = { until: 0, x: 0, z: 0 };
+function celebrate(x, z, seconds) {
+  Object.assign(celebration, { until: performance.now() + seconds * 1000, x, z });
+}
+
+function updateFireworks(dt, minute) {
+  const fest = festivalOf(G.time.season, G.time.day);
+  const show = fest?.activity === 'watch' && minute >= fest.start && minute < fest.end;
+  if (!show && performance.now() > celebration.until) return;
+  fireworkTimer -= dt;
+  if (fireworkTimer > 0) return;
+  fireworkTimer = 0.45 + Math.random();
+  const c = show ? TOWN.pond : celebration;
+  const x = c.x + (Math.random() - 0.5) * 14, z = c.z + (Math.random() - 0.5) * 10;
+  firework(particles, x, 14 + Math.random() * 8, z);
+  if (G.me && Math.hypot(G.me.position.x - x, G.me.position.z - z) < 80) G.sfx.play('firework');
 }
 
 G.talkTo = async (id) => {
@@ -782,7 +873,8 @@ function frame() {
       const it = nearestInteractable();
       showPrompt(hint || it?.label || (G.tool === 'rod' && nearWater(focus.x, focus.z, 1.8) && !G.fishing ? 'Spasi: lempar kail' : null));
     } else showPrompt(null);
-    villagers.update(dt, { minute, time: G.time, me: G.me.position, project, requests: G.requests, season: SEASONS[G.time.season].id });
+    villagers.update(dt, { minute, time: G.time, me: G.me.position, project, requests: G.requests, season: SEASONS[G.time.season].id, homes: G.homes });
+    updateFireworks(dt, minute);
     updateLabels(dt);
     updateClock(minute);
     minimapTimer -= dt;

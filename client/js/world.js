@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import {
-  PLOT_CENTERS, plotLayout, TOWN, WILD_TREES, WORLD_BOUNDS, FIELD_W, FIELD_H, mulberry32,
+  PLOT_CENTERS, plotLayout, TOWN, WILD_TREES, WORLD_BOUNDS, FIELD_W, FIELD_H, mulberry32, SHOPS, shopHours,
 } from '/shared/defs.js';
 import {
   Builder, vcMat, swayMat, windowMat, glowMat, windUniform, building, addTree, addBush, addFlower, addRock,
-  addFence, addWell, addBin, addLamp, addBench, addFountain,
+  addFence, addWell, addBin, addLamp, addBench, addFountain, makeChicken, makeCow,
 } from './models.js';
 
 const GRASS = { spring: 0x8fd16a, summer: 0x6fbf4f, fall: 0xc2b25a, winter: 0xeef3f7 };
@@ -248,7 +248,7 @@ export class World {
     this.market = building({ w: M.w, d: M.d, h: 3.4, wall: 0xf6e7d0, roof: 0xc4553b, awning: 0xe0583e, windows: 2 });
     this.market.position.set(M.x, 0, M.z);
     this.scene.add(this.store, this.market);
-    const s1 = signMesh('🏪 TOKO UMUM', { bg: '#2f7a4a' });
+    const s1 = signMesh(`${SHOPS.store.icon} ${SHOPS.store.name.toUpperCase()}`, { bg: '#2f7a4a' });
     s1.position.set(S.x, 4.0, S.z + S.d / 2 + 0.12);
     const s2 = signMesh('⚖️ PASAR PEMAIN', { bg: '#b8432e' });
     s2.position.set(M.x, 4.0, M.z + M.d / 2 + 0.12);
@@ -263,7 +263,7 @@ export class World {
       addLamp(b, x, z);
       this.lampPositions.push([x, z]);
     }
-    for (const x of [-30, -20, 20, 30]) { addLamp(b, x, -2.4); this.lampPositions.push([x, -2.4]); }
+    for (const x of [-32, -18.6, 20, 30]) { addLamp(b, x, -2.4); this.lampPositions.push([x, -2.4]); }
     for (const [x, z, ry] of TOWN.benches) addBench(b, x, z, ry);
     // Market crates & produce stand in front of the market.
     for (let i = 0; i < 4; i++) {
@@ -284,7 +284,7 @@ export class World {
     b.add(new THREE.IcosahedronGeometry(0.14, 0), 0xe2412b, { x: C.x - 0.15, y: 0.99, z: C.z + 0.05 });
     b.add(new THREE.BoxGeometry(0.34, 0.12, 0.24), 0xf2c94c, { x: C.x + 0.45, y: 0.98, z: C.z });
     this.scene.add(b.mesh());
-    const hours = signMesh('🕗 Buka 08:00–18:00', { bg: '#7a4a2a', font: 50 }, 1.8);
+    const hours = signMesh(`🕗 Buka ${shopHours('store')}`, { bg: '#7a4a2a', font: 50 }, 1.8);
     hours.position.set(S.x, 1.98, S.z + S.d / 2 + 0.12);
     this.scene.add(hours);
     this.setupVillage();
@@ -322,7 +322,8 @@ export class World {
     this.scene.add(mayor, hut, shop);
     doorSign(H.mayor, '🏛️ KEPALA DESA', '#5a3a8a', 3.0);
     doorSign(H.hut, '🎣 PONDOK NELAYAN', '#2a5a8a', 2.6);
-    doorSign(H.workshop, '🪓 BENGKEL KAYU', '#6a4a2a', 2.9);
+    doorSign(H.workshop, '🪚 BENGKEL KAYU', '#6a4a2a', 2.9);
+    this.setupWorkplaces(doorSign);
 
     const b = new Builder();
     // Flag pole in front of the village head's house (red and white).
@@ -372,6 +373,247 @@ export class World {
       this.scene.add(n);
       this.boardNotes.push(n);
     }
+  }
+
+  // Shops and homes of the Harvest Moon-style cast.
+  setupWorkplaces(doorSign) {
+    const H = TOWN.houses;
+    const place = (key, opts) => {
+      const g = building({ w: H[key].w, d: H[key].d, doorSide: H[key].door, ...opts });
+      g.position.set(H[key].x, 0, H[key].z);
+      this.scene.add(g);
+    };
+    place('depot', { h: 3.2, wall: 0xe8d9b5, roof: 0xd9822b, windows: 2 });
+    place('forge', { h: 3.0, wall: 0x8f949a, roof: 0x4a3a32, trim: 0xd9d2c4, windows: 1, chimney: true });
+    place('ranch', { h: 3.2, wall: 0xb8432e, roof: 0x5a3a2a, trim: 0xf6ead2, door: 0xf6ead2, windows: 2 });
+    place('kedai', { h: 3.0, wall: 0xf6e7d0, roof: 0xe8743e, awning: 0xf2c94c, windows: 2 });
+    place('clinic', { h: 3.0, wall: 0xf8f8f4, roof: 0x5aa0d8, windows: 2 });
+    doorSign(H.depot, '📦 EKSPEDISI BLOOM', '#b8641e', 3.2);
+    doorSign(H.forge, '⚒️ PANDAI BESI', '#4a3a32', 3.0);
+    doorSign(H.ranch, '🐄 PETERNAKAN JAYA', '#7a2a1a', 3.2);
+    doorSign(H.kedai, '🍲 KEDAI AYU', '#c4561e', 3.0);
+    doorSign(H.clinic, '🏥 KLINIK DESA', '#2a6ab5', 3.0);
+
+    const b = new Builder();
+    // Shop counters.
+    const tops = { ranch: 0xf2f2f2, forge: 0x4a4f55, carpenter: 0xd9b27c, kedai: 0xb07a45, clinic: 0xffffff };
+    for (const [key, c] of Object.entries(TOWN.counters)) {
+      b.add(new THREE.BoxGeometry(c.w, 0.85, c.d), key === 'clinic' ? 0xdfe8ef : 0x9a6a3a, { x: c.x, y: 0.43, z: c.z, jitter: 0.05 });
+      b.add(new THREE.BoxGeometry(c.w + 0.15, 0.08, c.d + 0.15), tops[key], { x: c.x, y: 0.88, z: c.z });
+    }
+    const C = TOWN.counters;
+    // Ranch: milk cans; forge: anvil; kedai: pots; clinic: medicine bottles; carpenter: planks.
+    for (const dx of [-0.45, 0.45]) b.add(new THREE.CylinderGeometry(0.13, 0.15, 0.4, 8), 0xc9ced3, { x: C.ranch.x + dx, y: 1.12, z: C.ranch.z });
+    b.add(new THREE.BoxGeometry(0.6, 0.18, 0.28), 0x3a3f45, { x: C.forge.x, y: 1.0, z: C.forge.z });
+    b.add(new THREE.ConeGeometry(0.12, 0.3, 4), 0x3a3f45, { x: C.forge.x + 0.42, y: 1.0, z: C.forge.z, rz: Math.PI / 2 });
+    b.add(new THREE.CylinderGeometry(0.2, 0.17, 0.22, 10), 0x5a5f65, { x: C.kedai.x - 0.4, y: 1.04, z: C.kedai.z });
+    b.add(new THREE.CylinderGeometry(0.16, 0.14, 0.18, 10), 0xc4553b, { x: C.kedai.x + 0.35, y: 1.02, z: C.kedai.z });
+    for (let i = 0; i < 4; i++) b.add(new THREE.CylinderGeometry(0.05, 0.05, 0.2, 6), [0x6ac0f0, 0x9ad46a, 0xe2553e, 0xf2c94c][i], { x: C.clinic.x - 0.45 + i * 0.3, y: 1.02, z: C.clinic.z });
+    for (let i = 0; i < 3; i++) b.add(new THREE.BoxGeometry(1.2, 0.05, 0.16), 0xe8c98a, { x: C.carpenter.x, y: 0.95 + i * 0.05, z: C.carpenter.z - 0.15 + i * 0.12, ry: i * 0.08 });
+
+    // Courier depot: a hand cart and stacked crates.
+    const D = H.depot;
+    b.add(new THREE.BoxGeometry(1.4, 0.45, 0.9), 0xb07a45, { x: D.x + 2.6, y: 0.6, z: D.z - D.d / 2 - 1.2, jitter: 0.06 });
+    for (const dz of [-0.5, 0.5]) b.add(new THREE.CylinderGeometry(0.3, 0.3, 0.08, 12), 0x5a3a22, { x: D.x + 2.4, y: 0.3, z: D.z - D.d / 2 - 1.2 + dz, rx: Math.PI / 2 });
+    b.add(new THREE.BoxGeometry(0.1, 0.1, 1.2), 0x7a5232, { x: D.x + 3.5, y: 0.75, z: D.z - D.d / 2 - 1.2 });
+    for (const [dx, y] of [[-2.6, 0.3], [-2.0, 0.3], [-2.3, 0.85]]) b.add(new THREE.BoxGeometry(0.55, 0.55, 0.55), 0xc9a26b, { x: D.x + dx, y, z: D.z - D.d / 2 - 0.6, jitter: 0.08 });
+    // Forge: water barrel and a glowing furnace mouth.
+    const F = H.forge;
+    b.add(new THREE.CylinderGeometry(0.35, 0.32, 0.7, 10), 0x6a4528, { x: F.x - 2.2, y: 0.35, z: F.z - F.d / 2 - 0.7 });
+    b.add(new THREE.CylinderGeometry(0.3, 0.3, 0.04, 10), 0x3b7fc4, { x: F.x - 2.2, y: 0.71, z: F.z - F.d / 2 - 0.7 });
+    // Ranch: silo, hay bales, feeding trough and the pen with animals.
+    const R = H.ranch;
+    b.add(new THREE.CylinderGeometry(0.9, 0.9, 4.2, 14), 0xd9d2c4, { x: R.x + R.w / 2 + 1.1, y: 2.1, z: R.z + 1.6, jitter: 0.03 });
+    b.add(new THREE.SphereGeometry(0.92, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0xb8432e, { x: R.x + R.w / 2 + 1.1, y: 4.2, z: R.z + 1.6 });
+    const P = TOWN.ranchPen;
+    addFence(b, P.x0, P.z0, P.x1, P.z0);
+    addFence(b, P.x1, P.z0, P.x1, P.z1);
+    addFence(b, P.x0, P.z1, P.x1, P.z1);
+    addFence(b, P.x0, P.z0, P.x0, 14.9);
+    addFence(b, P.x0, 15.9, P.x0, P.z1);
+    for (const [x, z] of [[P.x1 - 0.9, P.z0 + 0.8], [P.x1 - 0.9, P.z0 + 1.9]]) {
+      b.add(new THREE.CylinderGeometry(0.45, 0.45, 0.8, 12), 0xe0c46a, { x, y: 0.45, z, rx: Math.PI / 2, jitter: 0.08 });
+    }
+    b.add(new THREE.BoxGeometry(1.6, 0.35, 0.45), 0x8a5a32, { x: (P.x0 + P.x1) / 2, y: 0.18, z: P.z1 - 0.6 });
+    b.add(new THREE.BoxGeometry(1.4, 0.1, 0.3), 0xd9c27a, { x: (P.x0 + P.x1) / 2, y: 0.36, z: P.z1 - 0.6 });
+    // Kedai: an outdoor table with a parasol.
+    const K = H.kedai;
+    const tx = K.x - 2.8, tz = K.z - K.d / 2 - 1.5;
+    b.add(new THREE.CylinderGeometry(0.55, 0.55, 0.06, 12), 0xb07a45, { x: tx, y: 0.75, z: tz });
+    b.add(new THREE.CylinderGeometry(0.06, 0.08, 0.75, 6), 0x7a5232, { x: tx, y: 0.37, z: tz });
+    for (const a of [0, Math.PI]) b.add(new THREE.CylinderGeometry(0.2, 0.2, 0.42, 8), 0x9a6a3a, { x: tx + Math.cos(a) * 0.85, y: 0.21, z: tz + Math.sin(a) * 0.85 });
+    b.add(new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6), 0xdddddd, { x: tx, y: 1.6, z: tz });
+    b.add(new THREE.ConeGeometry(1.2, 0.5, 10), 0xe8743e, { x: tx, y: 2.55, z: tz, jitter: 0.05 });
+    // Clinic: a red cross above the door and a small herb garden.
+    const Q = H.clinic;
+    b.add(new THREE.BoxGeometry(0.5, 0.14, 0.05), 0xe2553e, { x: Q.x + 1.8, y: 2.3, z: Q.z - Q.d / 2 - 0.05 });
+    b.add(new THREE.BoxGeometry(0.14, 0.5, 0.05), 0xe2553e, { x: Q.x + 1.8, y: 2.3, z: Q.z - Q.d / 2 - 0.05 });
+    for (let i = 0; i < 5; i++) addFlower(b, Q.x - 2.4 + i * 0.32, Q.z - Q.d / 2 - 0.45, [0x9ad46a, 0xffffff, 0xf6a8c8][i % 3]);
+    this.setupSpring(b);
+    this.scene.add(b.mesh());
+
+    // The forge's fire glows day and night.
+    const fire = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 0.05), new THREE.MeshBasicMaterial({ color: 0xff8a2a }));
+    fire.position.set(F.x - 1.5, 0.6, F.z - F.d / 2 - 0.03);
+    this.scene.add(fire);
+    this.forgeFire = fire;
+    this.forgeLight = new THREE.PointLight(0xff8a3a, 4, 6, 1.6);
+    this.forgeLight.position.set(F.x - 1.5, 1.0, F.z - F.d / 2 - 0.8);
+    this.scene.add(this.forgeLight);
+
+    // Animals at the ranch wander inside their pen.
+    this.ranchAnimals = [];
+    for (const [type, n] of [['cow', 2], ['chicken', 3]]) {
+      for (let i = 0; i < n; i++) {
+        const m = type === 'cow' ? makeCow() : makeChicken();
+        m.position.set(P.x0 + 1 + Math.random() * (P.x1 - P.x0 - 2), 0, P.z0 + 1 + Math.random() * (P.z1 - P.z0 - 2));
+        m.userData = { target: null, wait: Math.random() * 4, speed: type === 'cow' ? 0.7 : 1.3 };
+        this.scene.add(m);
+        this.ranchAnimals.push(m);
+      }
+    }
+  }
+
+  // Harvest Goddess' spring: a clear pool, a little waterfall and glowing flowers.
+  setupSpring(b) {
+    const S = TOWN.spring;
+    this.springMat = this.waterMat.clone();
+    this.springMat.uniforms = { ...this.waterMat.uniforms, uDeep: { value: new THREE.Color(0x1aa38f) }, uShallow: { value: new THREE.Color(0x8ff5e0) } };
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(S.r, 32), this.springMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(S.x, 0.07, S.z);
+    this.scene.add(pool);
+    const rnd = mulberry32(77);
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      if (Math.abs(a - Math.PI / 2) < 0.3) continue; // opening on the south side
+      addRock(b, S.x + Math.cos(a) * (S.r + 0.25), S.z + Math.sin(a) * (S.r + 0.25), 0.6 + rnd() * 0.4, 0xa9b4ae);
+    }
+    for (let i = 0; i < 3; i++) b.add(new THREE.IcosahedronGeometry(0.9 - i * 0.15, 0), 0x8a948e, { x: S.x - 0.6 + i * 0.6, y: 0.9 + i * 0.5, z: S.z - S.r - 0.7, jitter: 0.15 });
+    b.add(new THREE.BoxGeometry(0.6, 1.9, 0.08), 0x9fe8ff, { x: S.x, y: 0.95, z: S.z - S.r - 0.15 });
+    b.add(new THREE.CylinderGeometry(0.35, 0.45, 0.7, 8), 0xc9c2b5, { x: S.x, y: 0.35, z: S.z + S.r + 1.0 });
+    b.add(new THREE.CylinderGeometry(0.4, 0.3, 0.12, 10), 0xd9d2c4, { x: S.x, y: 0.76, z: S.z + S.r + 1.0 });
+    const glowing = new Builder();
+    for (let i = 0; i < 14; i++) {
+      const a = rnd() * Math.PI * 2, r = S.r + 0.9 + rnd() * 1.6;
+      glowing.add(new THREE.IcosahedronGeometry(0.09, 0), [0xbff7ff, 0xffd6f0, 0xfff3b0][i % 3], { x: S.x + Math.cos(a) * r, y: 0.35, z: S.z + Math.sin(a) * r });
+    }
+    this.scene.add(new THREE.Mesh(glowing.geometry(), glowMat));
+    const sign = signMesh('✨ MATA AIR DEWI', { bg: '#2a8a7a', font: 52 }, 2.0);
+    sign.position.set(S.x + 1.8, 1.2, S.z + S.r + 1.4);
+    this.scene.add(sign);
+  }
+
+  // Festival decorations around the plaza, only on the festival day.
+  setFestival(fest) {
+    const id = fest?.id || null;
+    if (this.festId === id) return;
+    this.festId = id;
+    if (this.festGroup) {
+      this.scene.remove(this.festGroup);
+      this.festGroup.traverse((o) => o.geometry?.dispose());
+    }
+    this.festGroup = null;
+    this.festPot = null;
+    if (!fest) return;
+    const palette = {
+      flower: [0xf6a8c8, 0xffffff, 0xf2c94c, 0x9ad46a], livestock: [0xe2553e, 0xf2c94c, 0x3e8ee8],
+      fireworks: [0x3e3ea8, 0xf2c94c, 0xe2553e], harvest: [0xe07b2a, 0xf2c94c, 0xb5476b], starry: [0x2a3a7a, 0xfff3b0, 0x9ad0ff],
+    }[fest.id];
+    const g = new THREE.Group();
+    const b = new Builder();
+    const lamps = this.lampPositions.slice(0, 8);
+    for (let i = 0; i < lamps.length; i++) {
+      // Bunting flags strung between the plaza lamps.
+      const [ax, az] = lamps[i], [bx, bz] = lamps[(i + 1) % lamps.length];
+      for (let k = 1; k < 8; k++) {
+        const t = k / 8;
+        const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+        const sag = Math.sin(t * Math.PI) * 0.45;
+        b.add(new THREE.ConeGeometry(0.16, 0.32, 3), palette[k % palette.length], { x, y: 2.6 - sag, z, rx: Math.PI, ry: Math.atan2(bx - ax, bz - az) });
+      }
+    }
+    // Banner behind the village head's stage.
+    b.add(new THREE.BoxGeometry(0.1, 3.0, 0.1), 0x7a5232, { x: -1.9, y: 1.5, z: -4.9 });
+    b.add(new THREE.BoxGeometry(0.1, 3.0, 0.1), 0x7a5232, { x: 1.9, y: 1.5, z: -4.9 });
+    if (fest.id === 'flower' || fest.id === 'harvest') {
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        b.add(new THREE.CylinderGeometry(0.22, 0.17, 0.35, 8), 0xb5603a, { x: Math.cos(a) * 2.6, y: 0.17, z: Math.sin(a) * 2.6 });
+        b.add(new THREE.IcosahedronGeometry(0.22, 0), palette[i % palette.length], { x: Math.cos(a) * 2.6, y: 0.45, z: Math.sin(a) * 2.6, jitter: 0.2 });
+      }
+    }
+    if (fest.id === 'livestock') {
+      for (const [x, z] of [[-3.2, 7.2], [3.2, 7.2], [-7.2, 2.8], [7.2, 2.8]]) b.add(new THREE.CylinderGeometry(0.45, 0.45, 0.8, 12), 0xe0c46a, { x, y: 0.45, z, rx: Math.PI / 2, jitter: 0.08 });
+    }
+    if (fest.id === 'harvest') {
+      // The communal pot everyone adds an ingredient to.
+      b.add(new THREE.CylinderGeometry(0.75, 0.55, 0.8, 14), 0x3a3f45, { x: 0, y: 0.75, z: 3.2 });
+      b.add(new THREE.CylinderGeometry(0.68, 0.68, 0.05, 14), 0xd98a3a, { x: 0, y: 1.12, z: 3.2 });
+      for (let i = 0; i < 4; i++) b.add(new THREE.CylinderGeometry(0.07, 0.07, 0.9, 6), 0x6a4528, { x: Math.cos(i * 1.57) * 0.35, y: 0.12, z: 3.2 + Math.sin(i * 1.57) * 0.35, rz: Math.PI / 2, ry: i * 0.8 });
+      this.festPot = new THREE.Vector3(0, 1.2, 3.2);
+    }
+    if (fest.id === 'starry' || fest.id === 'fireworks') {
+      const lights = new Builder();
+      for (let i = 0; i < 40; i++) {
+        const a = (i / 40) * Math.PI * 2;
+        lights.add(new THREE.IcosahedronGeometry(0.1, 1), 0xffffff, { x: Math.cos(a) * 8, y: 2.35 + Math.sin(i * 1.3) * 0.15, z: Math.sin(a) * 8 });
+      }
+      g.add(new THREE.Mesh(lights.geometry(), glowMat));
+    }
+    g.add(b.mesh());
+    const banner = signMesh(`${fest.icon} ${fest.name.toUpperCase()}`, { bg: '#7a2a4a', font: 50 }, 3.6);
+    banner.position.set(0, 2.7, -4.86);
+    g.add(banner);
+    this.festGroup = g;
+    this.scene.add(g);
+  }
+
+  // Farm buildings grow with upgrades: porch and loft, silos, scaffolding while building.
+  updatePlotStructures(plot) {
+    this.plotExtras = this.plotExtras || [];
+    const old = this.plotExtras[plot.id];
+    if (old) {
+      this.scene.remove(old);
+      old.geometry.dispose();
+    }
+    const L = plotLayout(plot.id);
+    const b = new Builder();
+    const hl = plot.houseLevel || 0;
+    const H = L.house;
+    if (hl >= 1) {
+      const px = H.x + H.w / 2 + 0.7;
+      b.add(new THREE.BoxGeometry(1.4, 0.12, 3.4), 0xa86a3a, { x: px, y: 2.3, z: H.z, rz: -0.25 });
+      for (const dz of [-1.5, 1.5]) b.add(new THREE.BoxGeometry(0.12, 2.2, 0.12), 0xf6ead2, { x: px + 0.55, y: 1.1, z: H.z + dz });
+      b.add(new THREE.BoxGeometry(0.5, 0.25, 0.9), 0x8a5a32, { x: H.x + H.w / 2 + 0.3, y: 0.5, z: H.z + 1.9 });
+    }
+    if (hl >= 2) {
+      b.add(new THREE.BoxGeometry(3.2, 1.6, 3.2), 0xf6ead2, { x: H.x - 1, y: 3.9, z: H.z, jitter: 0.03 });
+      b.add(new THREE.ConeGeometry(2.5, 1.2, 4), 0x7a3a2a, { x: H.x - 1, y: 5.3, z: H.z, ry: Math.PI / 4 });
+      b.add(new THREE.BoxGeometry(0.7, 0.6, 0.06), 0xffe7a0, { x: H.x - 1, y: 3.9, z: H.z + 1.62 });
+    }
+    const B = L.barn;
+    const silo = (dx, h, top) => {
+      b.add(new THREE.CylinderGeometry(0.75, 0.75, h, 12), 0xd9d2c4, { x: B.x - B.w / 2 - 0.2 + dx, y: h / 2, z: B.z + B.d / 2 + 0.9 });
+      b.add(new THREE.SphereGeometry(0.77, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), top, { x: B.x - B.w / 2 - 0.2 + dx, y: h, z: B.z + B.d / 2 + 0.9 });
+    };
+    if (plot.barnLevel >= 1) silo(0, 3.2, 0xb8432e);
+    if (plot.barnLevel >= 2) silo(1.7, 4.0, 0x3f8f5a);
+    if (plot.building) {
+      // Scaffolding around whatever the carpenter is working on.
+      const t = plot.building.kind === 'barn' ? B : H;
+      const hw = t.w / 2 + 0.4, hd = t.d / 2 + 0.4;
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.add(new THREE.BoxGeometry(0.12, 3.6, 0.12), 0xc9a26b, { x: t.x + sx * hw, y: 1.8, z: t.z + sz * hd });
+      for (const y of [1.2, 2.4]) {
+        b.add(new THREE.BoxGeometry(hw * 2, 0.08, 0.3), 0xd9b27c, { x: t.x, y, z: t.z - hd });
+        b.add(new THREE.BoxGeometry(hw * 2, 0.08, 0.3), 0xd9b27c, { x: t.x, y, z: t.z + hd });
+        b.add(new THREE.BoxGeometry(0.3, 0.08, hd * 2), 0xd9b27c, { x: t.x - hw, y, z: t.z });
+        b.add(new THREE.BoxGeometry(0.3, 0.08, hd * 2), 0xd9b27c, { x: t.x + hw, y, z: t.z });
+      }
+    }
+    const mesh = b.mesh();
+    this.plotExtras[plot.id] = mesh;
+    this.scene.add(mesh);
   }
 
   setBoardNotes(count) {
@@ -459,6 +701,8 @@ export class World {
       ...Object.values(TOWN.houses).map((hs) => [hs.x - hs.w / 2 - 1.6, hs.z - hs.d / 2 - 1.6, hs.x + hs.w / 2 + 1.6, hs.z + hs.d / 2 + 1.6]),
       [-15.2, -1, -12.8, 8.5], [11.3, -1, 13.7, 10.5], [-25.2, -4, -22.8, 0],
       [TOWN.board.x - 1.5, TOWN.board.z - 1.5, TOWN.board.x + 1.5, TOWN.board.z + 1.5],
+      [TOWN.ranchPen.x0 - 1, TOWN.ranchPen.z0 - 1, TOWN.ranchPen.x1 + 1, TOWN.ranchPen.z1 + 1],
+      [-20.8, -1, -18.6, 8], [-10.5, 8.8, 10.5, 12.6], [-21, -20, -19.6, -15.8], [-30.4, -20, -28.4, 20], [30.5, -20, 32.5, 20],
     ];
     return rects.some(([x0, z0, x1, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
   }
@@ -491,7 +735,7 @@ export class World {
       b.addBuilder(tb, x, y, z, rnd() * 6, 1 + rnd() * 0.7);
     }
     // Town greenery.
-    const townTrees = [[-24, -10], [-26, 8], [-6, 12], [6, 13], [-20, 12], [32, -10], [30, 14], [-3, -14], [3.5, -15], [16, 4]];
+    const townTrees = [[-24, -10], [-12.8, 16.2], [16.8, 15.6], [-18.4, 16.4], [33.6, -6.5], [29.4, 15.2], [-3, -14], [3.5, -15], [16, 4]];
     for (const [x, z] of townTrees) addTree(b, x, z, 1.1, 'round', season, rnd);
     for (let i = 0; i < 40; i++) {
       const x = -28 + rnd() * 56, z = (rnd() < 0.5 ? -1 : 1) * (2.5 + rnd() * 14);
@@ -511,7 +755,7 @@ export class World {
         else {
           const x = -58 + rnd() * 116, z = -15 + rnd() * 30;
           if (Math.abs(z) < 2.5 || Math.hypot(x - TOWN.pond.x, z - TOWN.pond.z) < TOWN.pond.r + 1) continue;
-          if (Math.abs(x) < 30) continue;
+          if (Math.abs(x) < 30 || Math.hypot(x - TOWN.spring.x, z - TOWN.spring.z) < TOWN.spring.r + 1.2) continue;
           addFlower(b, x, z, colors[i % colors.length]);
         }
       }
@@ -527,6 +771,21 @@ export class World {
 
   update(dt, minute, weather, focus) {
     this.time += dt;
+    if (this.forgeLight) this.forgeLight.intensity = 3 + Math.sin(this.time * 9) * 0.6 + Math.sin(this.time * 23) * 0.3;
+    for (const m of this.ranchAnimals || []) {
+      const u = m.userData;
+      const P = TOWN.ranchPen;
+      if (!u.target) {
+        u.wait -= dt;
+        if (u.wait <= 0) u.target = new THREE.Vector3(P.x0 + 1 + Math.random() * (P.x1 - P.x0 - 2), 0, P.z0 + 1 + Math.random() * (P.z1 - P.z0 - 2));
+        continue;
+      }
+      const d = u.target.clone().sub(m.position);
+      if (d.length() < 0.1) { u.target = null; u.wait = 2 + Math.random() * 5; continue; }
+      d.normalize();
+      m.position.addScaledVector(d, u.speed * dt);
+      m.rotation.y = Math.atan2(d.x, d.z);
+    }
     windUniform.value = this.time * (weather === 'storm' ? 2.2 : 1);
     this.weather = weather;
     const hour = (minute / 60) % 24;

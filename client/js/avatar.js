@@ -25,7 +25,9 @@ function mat(color, opts = {}) {
 function mk(geo, m, x = 0, y = 0, z = 0, parent = null) {
   const o = new THREE.Mesh(geo, m);
   o.position.set(x, y, z);
-  o.castShadow = true;
+  // Tiny details (eyes, buttons) don't need their own shadows.
+  geo.computeBoundingSphere();
+  o.castShadow = geo.boundingSphere.radius > 0.08;
   if (parent) parent.add(o);
   return o;
 }
@@ -70,6 +72,12 @@ function buildHair(head, look) {
     mk(new THREE.SphereGeometry(0.14, 12, 10), m, 0, 0.3, -0.24, g);
     const tie = mk(new THREE.TorusGeometry(0.1, 0.025, 6, 12), mat('#e8553e'), 0, 0.24, -0.2, g);
     tie.rotation.x = 0.9;
+  } else if (look.hairStyle === 'ponytail') {
+    const back = mk(new THREE.SphereGeometry(0.33, 14, 10), m, 0, -0.02, -0.08, g);
+    back.scale.set(1.02, 0.85, 0.9);
+    mk(new THREE.SphereGeometry(0.06, 8, 6), mat('#f2c94c'), 0, 0.1, -0.33, g);
+    const tail = mk(new THREE.CapsuleGeometry(0.09, 0.3, 4, 8), m, 0, -0.12, -0.42, g);
+    tail.rotation.x = 0.45;
   } else if (look.hairStyle === 'pigtails') {
     const back = mk(new THREE.SphereGeometry(0.33, 14, 10), m, 0, -0.02, -0.08, g);
     back.scale.set(1.02, 0.85, 0.9);
@@ -117,6 +125,27 @@ function buildHat(head, look) {
     mk(new THREE.CylinderGeometry(0.25, 0.3, 0.22, 16), c, 0, 0.3, 0, g);
     mk(new THREE.CylinderGeometry(0.32, 0.47, 0.12, 18, 1, true), c, 0, 0.17, 0, g);
     mk(new THREE.CylinderGeometry(0.305, 0.305, 0.05, 16), mat('#6a5a3a'), 0, 0.22, 0, g);
+  } else if (look.hat === 'ranch') {
+    // Wide-brimmed rancher's hat.
+    const c = mat(hc || '#8a5a32');
+    const brim = mk(new THREE.CylinderGeometry(0.6, 0.62, 0.04, 22), c, 0, 0.2, 0, g);
+    brim.scale.z = 0.86;
+    for (const sx of [-1, 1]) {
+      const curl = mk(new THREE.CylinderGeometry(0.08, 0.08, 0.5, 8, 1, false, 0, Math.PI), c, sx * 0.55, 0.25, 0, g);
+      curl.rotation.set(Math.PI / 2, 0, sx * Math.PI / 2);
+    }
+    mk(new THREE.CylinderGeometry(0.24, 0.29, 0.3, 14), c, 0, 0.36, 0, g);
+    mk(new THREE.CylinderGeometry(0.295, 0.295, 0.06, 14), mat('#3a2418'), 0, 0.25, 0, g);
+    mk(new THREE.BoxGeometry(0.06, 0.06, 0.4), c, 0, 0.5, 0, g);
+  } else if (look.hat === 'crown') {
+    // Flower crown.
+    const cols = ['#f6a8c8', '#ffffff', '#f2c94c', hc || '#ff8ab5'];
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      mk(new THREE.SphereGeometry(0.06, 8, 6), mat(cols[i % cols.length]), Math.cos(a) * 0.3, 0.17, Math.sin(a) * 0.3, g);
+      const leaf = mk(new THREE.ConeGeometry(0.035, 0.12, 4), mat('#6fbf4a'), Math.cos(a + 0.3) * 0.31, 0.15, Math.sin(a + 0.3) * 0.31, g);
+      leaf.rotation.z = Math.PI / 2;
+    }
   } else if (look.hat === 'sunhat') {
     const c = mat(hc || '#f6e2b0');
     const brim = mk(new THREE.CylinderGeometry(0.64, 0.68, 0.04, 22), c, 0, 0.2, 0, g);
@@ -190,8 +219,25 @@ export function makeAvatar(look) {
     mk(new THREE.BoxGeometry(0.16, 0.12, 0.03), mat('#2f6f44'), 0.1, 0.62, front + 0.1, body);
   }
   if (look.skirt) {
-    const sk = mk(new THREE.CylinderGeometry(0.28, 0.44, 0.42, 16), mat(look.skirt), 0, 0.5, 0, body);
+    const sk = mk(new THREE.CylinderGeometry(0.28, 0.44, look.glow ? 0.62 : 0.42, 16), mat(look.skirt), 0, look.glow ? 0.4 : 0.5, 0, body);
     sk.scale.z = stout ? 0.95 : 0.85;
+  }
+  if (look.coat) {
+    // Long open coat (the doctor's white coat).
+    const coat = mat(look.coat, { side: THREE.DoubleSide });
+    const c = mk(new THREE.CylinderGeometry(0.3, 0.38, 0.86, 16, 1, true, Math.PI * 0.12, Math.PI * 1.76), coat, 0, 0.7, 0, body);
+    c.scale.z = 0.88;
+    for (const sx of [-1, 1]) {
+      const lapel = mk(new THREE.BoxGeometry(0.08, 0.3, 0.03), coat, sx * 0.1, 1.02, front + 0.03, body);
+      lapel.rotation.z = sx * 0.3;
+    }
+    mk(new THREE.BoxGeometry(0.1, 0.07, 0.02), mat('#e2553e'), 0.14, 0.92, front + 0.05, body);
+  }
+  if (look.scarf) {
+    const sc = mat(look.scarf);
+    const ring = mk(new THREE.TorusGeometry(0.2, 0.055, 6, 16), sc, 0, 1.18, 0.02, body);
+    ring.rotation.x = Math.PI / 2;
+    mk(new THREE.ConeGeometry(0.09, 0.18, 4), sc, 0.06, 1.07, front + 0.03, body).rotation.x = Math.PI;
   }
   if (look.toolbelt) {
     const belt = mk(new THREE.CylinderGeometry(0.3, 0.3, 0.09, 14), mat('#5a3a1a'), 0, 0.63, 0, body);
@@ -205,8 +251,9 @@ export function makeAvatar(look) {
     mk(new THREE.BoxGeometry(0.36, 0.1, 0.18), mat('#7a4a22'), 0, 1.05, -0.27, body);
   }
 
-  const armL = limb(shirt, 0.44, 0.085, body, -(stout ? 0.38 : 0.34), 1.1, 0);
-  const armR = limb(shirt, 0.44, 0.085, body, stout ? 0.38 : 0.34, 1.1, 0);
+  const sleeve = look.coat ? mat(look.coat) : shirt;
+  const armL = limb(sleeve, 0.44, 0.085, body, -(stout ? 0.38 : 0.34), 1.1, 0);
+  const armR = limb(sleeve, 0.44, 0.085, body, stout ? 0.38 : 0.34, 1.1, 0);
   armL.rotation.z = 0.12;
   armR.rotation.z = -0.12;
   mk(new THREE.SphereGeometry(0.085, 10, 8), skin, 0, -0.44, 0, armL);
@@ -254,6 +301,19 @@ export function makeAvatar(look) {
   shadow.position.y = 0.02;
   root.add(shadow);
   if (look.scale) root.scale.setScalar(look.scale);
+  if (look.glow) {
+    // The goddess shimmers: soft emissive tint and a halo.
+    root.traverse((o) => {
+      if (!o.isMesh || o === shadow || !o.material.isMeshStandardMaterial) return;
+      o.material = o.material.clone();
+      o.material.emissive = new THREE.Color(look.glow);
+      o.material.emissiveIntensity = 0.35;
+      o.material.transparent = true;
+    });
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.025, 8, 32), new THREE.MeshBasicMaterial({ color: 0xfff3b0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+    halo.position.set(0, 0.05, -0.3);
+    head.add(halo);
+  }
 
   root.userData = {
     body, head, eyes, mouth, armL, armR, legL, legR, toolSlot, look, hunch: look.hunch ? 0.2 : 0,
@@ -290,6 +350,25 @@ export function animateAvatar(av, dt, speed, mode = false) {
   const s = Math.sin(u.walk);
   const amp = Math.min(1, u.speed / 5);
   const breathe = Math.sin(u.t * 2.2) * 0.012;
+
+  if (pose === 'dance' && !moving) {
+    // Festival dance: bounce, sway and wave both arms.
+    const b = Math.sin(u.t * 6);
+    u.body.position.y = Math.abs(b) * 0.12 + breathe;
+    u.body.rotation.y = Math.sin(u.t * 3) * 0.35;
+    u.body.rotation.x = 0;
+    u.armL.rotation.z = 0.12 + 2.2 + Math.sin(u.t * 6) * 0.35;
+    u.armR.rotation.z = -0.12 - 2.2 - Math.sin(u.t * 6 + 1) * 0.35;
+    u.armL.rotation.x = 0;
+    u.armR.rotation.x = 0;
+    u.legL.rotation.x = Math.max(0, b) * 0.5;
+    u.legR.rotation.x = Math.max(0, -b) * 0.5;
+    u.head.rotation.z = Math.sin(u.t * 3) * 0.12;
+    blinkStep(u, dt);
+    return;
+  }
+  u.body.rotation.y = 0;
+  u.armR.rotation.z = -0.12;
 
   if (pose === 'sit' && !moving) {
     u.legL.rotation.x = -1.35;

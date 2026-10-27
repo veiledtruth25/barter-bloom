@@ -26,17 +26,24 @@ export class Particles {
     this.parts = [];
   }
 
-  burst(x, y, z, { count = 12, colors = [0xffffff], speed = 2, up = 3, size = 0.18, life = 0.8, gravity = 9, spread = 0.3 } = {}) {
+  // sphere: particles fly out in every direction (fireworks) instead of a fountain.
+  burst(x, y, z, { count = 12, colors = [0xffffff], speed = 2, up = 3, size = 0.18, life = 0.8, gravity = 9, spread = 0.3, sphere = false } = {}) {
     const c = new THREE.Color();
     for (let i = 0; i < count; i++) {
       if (this.parts.length >= MAX) this.parts.shift();
       c.set(colors[i % colors.length]);
       const a = Math.random() * Math.PI * 2;
-      const sp = speed * (0.4 + Math.random() * 0.6);
+      let vx, vy, vz;
+      if (sphere) {
+        const u = Math.random() * 2 - 1, r = Math.sqrt(1 - u * u), sp = speed * (0.85 + Math.random() * 0.3);
+        vx = Math.cos(a) * r * sp; vy = u * sp; vz = Math.sin(a) * r * sp;
+      } else {
+        const sp = speed * (0.4 + Math.random() * 0.6);
+        vx = Math.cos(a) * sp; vy = up * (0.5 + Math.random() * 0.7); vz = Math.sin(a) * sp;
+      }
       this.parts.push({
         x: x + (Math.random() - 0.5) * spread, y, z: z + (Math.random() - 0.5) * spread,
-        vx: Math.cos(a) * sp, vy: up * (0.5 + Math.random() * 0.7), vz: Math.sin(a) * sp,
-        r: c.r, g: c.g, b: c.b, s: size * (0.6 + Math.random() * 0.8), life, max: life, gravity,
+        vx, vy, vz, r: c.r, g: c.g, b: c.b, s: size * (0.6 + Math.random() * 0.8), life, max: life, gravity, air: sphere,
       });
     }
   }
@@ -46,6 +53,7 @@ export class Particles {
     this.parts = this.parts.filter((p) => (p.life -= dt) > 0);
     for (const p of this.parts) {
       p.vy -= p.gravity * dt;
+      if (p.air) { const k = Math.max(0, 1 - dt * 1.2); p.vx *= k; p.vy *= k; p.vz *= k; }
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.y < 0.05) { p.y = 0.05; p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
       this.pos[n * 3] = p.x; this.pos[n * 3 + 1] = p.y; this.pos[n * 3 + 2] = p.z;
@@ -75,7 +83,15 @@ export const FX_STYLE = {
   npc_like: { colors: [0xff9ac1, 0xffe066], count: 16, up: 1.8, speed: 0.7, gravity: 0.8, life: 1.3, size: 0.17 },
   npc_neutral: { colors: [0xfff6c0], count: 8, up: 1.4, speed: 0.5, gravity: 0.8, life: 1, size: 0.14 },
   npc_dislike: { colors: [0x6a6f74, 0x9aa0a6], count: 14, up: 1.2, speed: 0.6, gravity: 0.4, life: 1.2, size: 0.22 },
+  goddess: { colors: [0xbff7ff, 0xfff3b0, 0xffd6f0], count: 60, up: 4, speed: 1.6, gravity: 1, life: 2.4, size: 0.2 },
+  wedding: { colors: [0xff4f8b, 0xffffff, 0xffd6e6], count: 50, up: 5, speed: 2, gravity: 2, life: 2, size: 0.2 },
 };
+
+const FIREWORK_COLORS = [[0xff4f6b, 0xffd0d8], [0x6ac0f0, 0xffffff], [0xf2c94c, 0xff8a2a], [0x9ad46a, 0xfff3b0], [0xc77bff, 0xffd6f0]];
+export function firework(particles, x, y, z) {
+  const colors = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+  particles.burst(x, y, z, { sphere: true, count: 90, colors, speed: 9, gravity: 1.6, life: 2.2, size: 1.6, spread: 0 });
+}
 
 // Rain / snow / seasonal ambience around the camera.
 export class Ambience {
@@ -227,6 +243,7 @@ export class Sfx {
       case 'knock': [0, 0.14, 0.28].forEach((d) => this.tone(150, 0.07, 'square', 0.07, -40, d)); break;
       case 'morning': [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.25, 'sine', 0.07, 0, i * 0.12)); break;
       case 'trade': [660, 880, 1100].forEach((f, i) => this.tone(f, 0.15, 'triangle', 0.07, 0, i * 0.08)); break;
+      case 'firework': this.tone(140, 0.4, 'sine', 0.1, -90); this.noise(0.7, 0.07, 1400); break;
       default: break;
     }
   }

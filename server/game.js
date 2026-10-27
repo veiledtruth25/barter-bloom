@@ -9,7 +9,7 @@ import {
 import {
   VILLAGERS, VILLAGER_IDS, MAX_FRIENDSHIP, TALK_POINTS, GIFT_POINTS, REQUEST_POINTS, MILESTONES, KNOCK_UNTIL,
   npcState, dayIndexOf, hearts, isBirthday, giftReaction, requestable, fillText, perkActive, shopPrice, upgradeGold,
-  festivalOfDay, FEST_HOST, FEST_TALK, FEST_POINTS, GODDESS, GODDESS_POINTS, GODDESS_BERRIES, goddessReaction,
+  FEST_HOST, FEST_TALK, FEST_POINTS, GODDESS, GODDESS_POINTS, GODDESS_BERRIES, goddessReaction,
 } from '../shared/villagers.js';
 
 const ANIMAL_NAMES = ['Mimi', 'Kiko', 'Bubu', 'Popo', 'Lulu', 'Dodo', 'Nana', 'Cici', 'Momo', 'Toto', 'Pipi', 'Gogo'];
@@ -961,7 +961,7 @@ export class Game {
         if (this.takeItem(p, ANIMALS[a.type].feed)) { a.fed = true; fed++; } else missing++;
       }
       if (!fed && !missing) fail('Semua hewan sudah diberi makan.');
-      if (!fed) fail('Kamu tidak punya pakan! Beli di Toko Umum atau potong rumput liar.');
+      if (!fed) fail('Kamu tidak punya pakan! Beli di Peternakan Jaya atau potong rumput liar.');
       msg = `${fed} hewan diberi makan${missing ? `, ${missing} belum (pakan kurang)` : ''}.`;
     } else if (op === 'pet') {
       const a = plot.animals.find((x) => x.id === animalId);

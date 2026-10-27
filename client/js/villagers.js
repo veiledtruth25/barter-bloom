@@ -1,6 +1,7 @@
 // Client-side villagers: 3D avatars that follow the shared schedule, plus portraits.
 import * as THREE from 'three';
-import { VILLAGERS, VILLAGER_IDS, SPOTS, HOUSES, npcState, dayIndexOf, isBirthday } from '/shared/villagers.js';
+import { VILLAGERS, VILLAGER_IDS, SPOTS, HOUSES, GODDESS, npcState, dayIndexOf, isBirthday } from '/shared/villagers.js';
+import { TOWN } from '/shared/defs.js';
 import { makeAvatar, animateAvatar, setTool } from './avatar.js';
 import { h } from './ui.js';
 
@@ -28,15 +29,18 @@ export class Villagers {
 
   stateOf(id) { return this.list.get(id)?.state; }
 
-  // ctx: { minute, time, me, project, requests, season }
+  // ctx: { minute, time, me, project, requests, season, homes: { villagerId: plotId } }
   update(dt, ctx) {
     const day = dayIndexOf(ctx.time);
+    this.updateGoddess(dt, ctx.me);
     for (const n of this.list.values()) {
-      const s = npcState(n.id, ctx.minute, ctx.time.weather, ctx.time.rate, day);
+      const s = npcState(n.id, ctx.minute, ctx.time.weather, ctx.time.rate, day, ctx.homes?.[n.id] ?? null);
       n.state = s;
       const a = n.avatar;
       const talking = this.talkingTo === n.id;
-      if (s.hidden) {
+      // Far-away villagers are not drawn at all.
+      const far = ctx.me && Math.hypot(s.x - ctx.me.x, s.z - ctx.me.z) > 75;
+      if (s.hidden || far) {
         // Indoors (a knock on the door talks through it).
         a.visible = false;
         n.placed = false;
@@ -140,16 +144,68 @@ export class Villagers {
     return best;
   }
 
-  // Doors the player can knock on: { house, x, z, ids } for homes with villagers inside.
+  // Doors the player can knock on: { house, x, z, ids } (ids = villagers inside).
   doors() {
     const out = [];
+    const inside = (spot) => VILLAGER_IDS.filter((id) => this.list.get(id).state?.hidden && this.list.get(id).state.spot === spot);
     for (const [key, house] of Object.entries(HOUSES)) {
       if (house.noKnock) continue;
-      const ids = VILLAGER_IDS.filter((id) => this.list.get(id).state?.hidden && this.list.get(id).state.spot === house.spot);
       const [x, z] = SPOTS[house.spot].pos;
-      out.push({ house: key, name: house.name, x, z, ids });
+      out.push({ house: key, name: house.name, x, z, ids: inside(house.spot) });
+    }
+    // Farmhouses where a married villager lives.
+    for (const n of this.list.values()) {
+      const plot = SPOTS[n.state?.spot]?.plot;
+      if (n.state?.hidden && plot !== undefined && !out.some((d) => d.house === `plot${plot}`)) {
+        const [x, z] = SPOTS[`plotHome${plot}`].pos;
+        out.push({ house: `plot${plot}`, name: 'Rumah ladang', x, z, ids: inside(`plotHome${plot}`), plot });
+      }
     }
     return out;
+  }
+
+  // The Harvest Goddess rises from her spring when called or given an offering.
+  // `hold` keeps her above the water until releaseGoddess() (while you talk to her).
+  showGoddess(scene, hold = false) {
+    if (!this.goddess) {
+      this.goddess = makeAvatar(GODDESS.look);
+      scene.add(this.goddess);
+    }
+    const g = this.goddess;
+    const u = g.userData;
+    if (hold) this.goddessHold = true;
+    if (g.visible && u.appear < 8) {
+      // Already up: just stay a while longer.
+      u.appear = Math.min(u.appear, 1.6);
+      return;
+    }
+    g.visible = true;
+    g.position.set(TOWN.spring.x, -1.6, TOWN.spring.z);
+    g.rotation.y = 0;
+    u.appear = 0;
+  }
+
+  releaseGoddess() {
+    this.goddessHold = false;
+    const g = this.goddess;
+    // Sink back into the spring shortly after the conversation ends.
+    if (g?.visible) g.userData.appear = Math.max(g.userData.appear, 7);
+  }
+
+  updateGoddess(dt, me) {
+    const g = this.goddess;
+    if (!g?.visible) return;
+    const u = g.userData;
+    u.appear += dt;
+    if (this.goddessHold) u.appear = Math.min(u.appear, 2);
+    const rise = Math.min(1, u.appear / 1.6);
+    const sink = Math.max(0, (u.appear - 8) / 1.6);
+    g.position.y = -1.6 + (rise - sink) * 1.9 + Math.sin(u.appear * 2) * 0.08;
+    if (me && Math.hypot(me.x - g.position.x, me.z - g.position.z) < 14) {
+      turnToward(g, Math.atan2(me.x - g.position.x, me.z - g.position.z), dt);
+    }
+    animateAvatar(g, dt, 0, 'idle');
+    if (sink >= 1) g.visible = false;
   }
 
   locationLabel(id) {
@@ -166,7 +222,7 @@ function turnToward(a, want, dt) {
   a.rotation.y += diff * Math.min(1, dt * 8);
 }
 
-// Renders a head-and-shoulders portrait of every villager once.
+// Renders a head-and-shoulders portrait of every villager (and the goddess) once.
 export function renderPortraits() {
   const size = 192;
   const canvas = document.createElement('canvas');
@@ -187,8 +243,8 @@ export function renderPortraits() {
   key.position.set(1.5, 2.5, 3);
   scene.add(key);
   const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
-  for (const id of VILLAGER_IDS) {
-    const look = VILLAGERS[id].look;
+  for (const id of [...VILLAGER_IDS, 'goddess']) {
+    const look = id === 'goddess' ? GODDESS.look : VILLAGERS[id].look;
     const av = makeAvatar(look);
     animateAvatar(av, 0.016, 0, 'idle');
     av.userData.eyes.scale.y = 1;

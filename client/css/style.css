@@ -259,6 +259,48 @@ table.list tr.data { animation: rise 0.3s both; }
 .banner.closed { background: rgba(226, 85, 62, 0.14); color: #a83a28; }
 .banner.perk { background: linear-gradient(90deg, #ffe3ef, #fff4c4); color: #8a3a5a; }
 .report.notes { font-size: 14px; }
+.banner.info { background: rgba(62, 142, 232, 0.12); color: #24598f; }
+.banner.fest { background: linear-gradient(90deg, #fff1c4, #ffe0ec); color: #7a3a2a; }
+.tag.love { background: linear-gradient(90deg, #ffd6e6, #ffe9f2); color: #b0306a; }
+
+/* Tool levels, shops & buildings */
+.slot .lvl { position: absolute; top: 2px; right: 3px; font-size: 9px; font-weight: 700; color: #3b2e1e; padding: 0 4px; border-radius: 6px; box-shadow: 0 1px 0 rgba(0,0,0,0.2); }
+.slot.forging .ico { filter: grayscale(1) opacity(0.4); }
+.slot.forging::after { content: '🔥'; position: absolute; font-size: 18px; top: 50%; left: 50%; transform: translate(-50%, -50%); animation: flicker 1.2s infinite; }
+.lvl-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #3b2e1e; padding: 1px 6px; border-radius: 7px; vertical-align: middle; margin-left: 4px; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.12); }
+.item-icon .lvl-badge { font-size: 12px; position: relative; top: -10px; }
+.grid.wide { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.fest-item { cursor: pointer; background: linear-gradient(90deg, rgba(255,241,196,0.92), rgba(255,224,236,0.92)); }
+.fest-item b { color: #b0306a; }
+.fest-item.live { animation: goldflash 1.6s infinite; }
+
+/* Festivals */
+.fest-done { align-items: center; text-align: center; font-size: 16px; padding: 18px; }
+.big-emoji { font-size: 54px; animation: bump 0.6s; }
+.player-row.winner { background: linear-gradient(90deg, #fff4c4, #ffe3ef); box-shadow: 0 0 0 2px var(--gold); }
+
+/* The Harvest Goddess */
+.dialogue.goddess { border-color: #9ff0dc; box-shadow: 0 0 0 4px rgba(127, 224, 200, 0.35), 0 24px 60px rgba(20, 80, 70, 0.4); background: linear-gradient(160deg, rgba(240, 255, 250, 0.96), rgba(255, 250, 238, 0.94)); }
+.dialogue.goddess .portrait.big { box-shadow: 0 0 0 3px #fff, 0 0 26px rgba(127, 224, 200, 0.9); }
+.dlg-head .favor { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.dlg-head .favor .bar { width: 90px; margin: 0; }
+.bar-fill.favor-fill { background: linear-gradient(90deg, #9ff0dc, #2fae9c); }
+.goddess-card { background: linear-gradient(160deg, rgba(232, 255, 248, 0.9), rgba(255, 255, 255, 0.75)); border-color: rgba(127, 224, 200, 0.6); }
+.inv-mini button.feather { border-color: #3e8ee8; }
+
+/* Calendar */
+.portrait.small { width: 38px; height: 38px; border-radius: 11px; font-size: 20px; }
+.cal-nav b { font-size: 16px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.cal-head { text-align: center; font-size: 11px; font-weight: 700; color: var(--ink-soft); }
+.cal-cell { position: relative; min-height: 54px; border-radius: 12px; background: rgba(255,255,255,0.75); padding: 4px 6px; display: flex; flex-direction: column; gap: 2px; }
+.cal-cell.past { opacity: 0.45; }
+.cal-cell.fest { background: linear-gradient(160deg, #fff1c4, #ffe0ec); }
+.cal-cell.today { box-shadow: 0 0 0 3px var(--green); }
+.cal-day { font-size: 12px; font-weight: 700; }
+.cal-icons { display: flex; flex-wrap: wrap; gap: 2px; font-size: 18px; line-height: 1; }
+.cal-face { width: 24px; height: 24px; border-radius: 7px; background: #fff6df; }
+.player-row.cal-ev.past { opacity: 0.55; }
 
 /* Day transition */
 #fade { position: fixed; inset: 0; z-index: 80; background: radial-gradient(circle at center, #2a2350, #0b0a1a); opacity: 0; pointer-events: none; transition: opacity 0.8s; display: grid; place-items: center; color: #fff; }

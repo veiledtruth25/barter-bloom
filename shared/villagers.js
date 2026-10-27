@@ -122,9 +122,9 @@ const CHOP = (() => {
 // pos: anchor point. node: road node it is reached from. path: extra points from node to pos.
 // hidden: villager is indoors. wander: idle wandering region. pose: idle animation.
 export const SPOTS = {
-  storeIn: { pos: [-12, -5.7], node: 'W12', hidden: true, label: 'Toko Umum (di dalam)', house: 'store' },
-  storeCounter: { pos: [-9.4, -5.3], node: 'W10', path: [[-10.9, -3.2], [-10.9, -5.3]], ry: 0, pose: 'shop', label: 'Konter Toko Umum' },
-  storeSide: { pos: [-13.6, -3.0], node: 'W14', ry: Math.PI, wander: { type: 'disc', r: 0.5, every: 10 }, label: 'Depan Toko Umum' },
+  storeIn: { pos: [-12, -5.7], node: 'W12', hidden: true, label: 'Toko Kelontong (di dalam)', house: 'store' },
+  storeCounter: { pos: [-9.4, -5.3], node: 'W10', path: [[-10.9, -3.2], [-10.9, -5.3]], ry: 0, pose: 'shop', label: 'Konter Toko Kelontong' },
+  storeSide: { pos: [-13.6, -3.0], node: 'W14', ry: Math.PI, wander: { type: 'disc', r: 0.5, every: 10 }, label: 'Depan Toko Kelontong' },
   marketIn: { pos: [12, -5.7], node: 'E12', hidden: true, label: 'Pasar (di dalam)', house: 'market' },
   marketStall: { pos: [9.85, -5.35], node: 'E10', ry: 0, pose: 'shop', label: 'Lapak Pasar' },
   marketStall2: { pos: [8.05, -5.35], node: 'E10', path: [[8.05, -3.6]], ry: 0.3, pose: 'idle', label: 'Lapak Pasar' },
@@ -997,6 +997,7 @@ export const GODDESS = {
   loves: ['flower', 'sunflower', 'strawberry', 'pineapple', 'golden_egg'],
   dislikes: ['stone', 'lumber', 'copper_ore', 'silver_ore', 'gold_ore', 'fodder', 'chicken_feed'],
   talk: {
+    intro: 'Selamat datang di mata airku, petani yang baik. Persembahkan sesuatu dari hasil kerja kerasmu, dan aku akan memberkatimu.',
     love: ['Indah sekali! Persembahan ini membuat hatiku berbunga.', 'Ah... harum dan indah. Terima kasih, petani yang baik.'],
     like: ['Terima kasih, wahai petani. Aku menerimanya dengan senang hati.'],
     neutral: ['Hmm... aku menerimanya.'],
