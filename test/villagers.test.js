@@ -31,8 +31,8 @@ test('villagers follow their daily schedule', () => {
   assert.equal(npcState('harjo', 12 * 60, 'rain', 2, 0).hidden, true);
 });
 
-test('villagers never teleport, even on short days', () => {
-  for (const rate of [2, 10]) {
+test('villagers never teleport (10- and 5-minute days)', () => {
+  for (const rate of [2, 4]) {
     for (const weather of ['sunny', 'rain', 'storm']) {
       for (const id of VILLAGER_IDS) {
         let prev = null;

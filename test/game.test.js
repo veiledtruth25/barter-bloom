@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Game, GameError } from '../server/game.js';
-import { plotLayout, FIELD_W, TOWN, CROPS } from '../shared/defs.js';
+import { plotLayout, FIELD_W, TOWN, CROPS, SHOPS } from '../shared/defs.js';
 
 function setup(n = 1) {
   const game = new Game({ rng: () => 0.5 });
@@ -113,9 +113,9 @@ test('changing an offer resets confirmations', () => {
 
 test('animals produce when fed and everyone sleeping skips the day', () => {
   const { game, players: [p] } = setup();
-  p.x = TOWN.store.door.x; p.z = TOWN.store.door.z;
+  p.x = SHOPS.ranch.at.x; p.z = SHOPS.ranch.at.z + 1;
   p.gold = 5000;
-  game.world.minute = 9 * 60; // store opening hours
+  game.world.minute = 9 * 60; // ranch opening hours
   game.buyAnimal(p, { type: 'chicken', name: 'Kiko' });
   const L = plotLayout(p.plotId);
   p.x = L.barnDoor.x; p.z = L.barnDoor.z;
