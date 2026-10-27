@@ -1,15 +1,17 @@
 import * as THREE from 'three';
 import {
   SEASONS, ITEMS, CROPS, TOOLS, REACH, FIELD_W, FIELD_H, PLOT_CENTERS, TOWN, plotLayout, colliders, resolveCollision,
-  nearWater,
+  nearWater, groundHeight, storeOpen,
 } from '/shared/defs.js';
+import { VILLAGERS } from '/shared/villagers.js';
+import { Villagers, renderPortraits } from './villagers.js';
 import { World } from './world.js';
 import { FarmRenderer, makeTargetMarker } from './farm.js';
 import { makeAvatar, animateAvatar, setTool, swing, hop, LOOK_CHOICES, defaultLook } from './avatar.js';
 import { Particles, Ambience, Sfx, FX_STYLE } from './fx.js';
 import {
   initUI, toast, feed, updateHud, updateHotbar, updateClock, showPrompt, fishMeter, addChat, drawMinimap, openPanel,
-  closePanel, panelOpen, refreshPanel, showDayStart, h,
+  closePanel, panelOpen, refreshPanel, showDayStart, advanceDialogue, h,
 } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -35,6 +37,7 @@ const ambience = new Ambience(scene);
 const marker = makeTargetMarker();
 marker.visible = false;
 scene.add(marker);
+const villagers = new Villagers(scene, $('labels'));
 
 const bobber = new THREE.Group();
 {
@@ -82,6 +85,10 @@ const G = {
     });
   },
 };
+G.villagers = villagers;
+G.requests = [];
+G.portraits = renderPortraits();
+G.minute = () => currentMinute();
 window.__G = G;
 
 function currentMinute() {
@@ -175,8 +182,9 @@ function connect(name, look) {
     G.self = s;
     if (prevGold !== undefined && s.gold > prevGold && G.me) floatText(G.me.position.x, 2.6, G.me.position.z, `+${s.gold - prevGold}G`, 'gold');
     updateHud();
-    refreshPanel('inventory', 'shop', 'ship', 'barn', 'market', 'trade', 'sleep');
+    refreshPanel('inventory', 'shop', 'ship', 'barn', 'market', 'trade', 'sleep', 'villagers');
   });
+  socket.on('requests', (list) => setRequests(list));
   socket.on('plot', (plot) => {
     G.plots[plot.id] = plot;
     farm.updatePlot(plot);
@@ -210,6 +218,15 @@ function connect(name, look) {
   });
   socket.on('fx', (f) => {
     const style = FX_STYLE[f.type];
+    if (f.type.startsWith('npc_')) {
+      // Villager reaction to a gift: hearts (or a grumble) above their head.
+      const emoji = { npc_love: '💖', npc_like: '😊', npc_neutral: '🙂', npc_dislike: '💢' }[f.type];
+      const n = villagers.list.get(f.npc);
+      const pos = n?.avatar.visible ? n.avatar.position : { x: f.x, z: f.z };
+      if (style) particles.burst(pos.x, 1.9, pos.z, style);
+      if (emoji) floatText(pos.x, 2.7, pos.z, emoji);
+      return;
+    }
     if (style) particles.burst(f.x, 0.3, f.z, style);
     const dist = G.me ? Math.hypot(G.me.position.x - f.x, G.me.position.z - f.z) : 99;
     if (dist < 25 && f.pid !== G.self?.id) G.sfx.play(f.type === 'harvest' ? 'pickup' : f.type);
@@ -246,6 +263,12 @@ function connect(name, look) {
   socket.on('disconnect', () => toast('Terputus dari server… mencoba menyambung ulang', 'error'));
 }
 
+function setRequests(list) {
+  G.requests = list || [];
+  world.setBoardNotes(G.requests.filter((q) => !q.doneBy).length);
+  refreshPanel('villagers', 'dialogue');
+}
+
 function setTime(t) {
   const oldSeason = G.time.season;
   G.time = t;
@@ -274,6 +297,7 @@ function onJoined(res) {
   }
   G.wild = w.wild;
   farm.updateWild(w.wild);
+  setRequests(w.requests);
   for (const p of w.players) ensurePlayer(p);
   const me = G.players.get(G.self.id);
   G.me = me.avatar;
@@ -314,8 +338,12 @@ window.addEventListener('keydown', (e) => {
   }
   const k = e.key.toLowerCase();
   if (k === 'escape') { if (G.uiOpen) closePanel(); return; }
+  if (panelOpen('dialogue')) {
+    if ([' ', 'e', 'f', 'enter'].includes(k)) { e.preventDefault(); if (!e.repeat) advanceDialogue(); }
+    return;
+  }
   if (k === 'enter') { e.preventDefault(); chat.focus(); return; }
-  const toggles = { i: 'inventory', m: 'market', p: 'players', h: 'help' };
+  const toggles = { i: 'inventory', m: 'market', p: 'players', h: 'help', v: 'villagers' };
   if (toggles[k]) {
     if (panelOpen(toggles[k])) closePanel(); else if (!G.trade) { closePanel(true); openPanel(toggles[k]); }
     return;
@@ -460,14 +488,51 @@ function interactables() {
   out.push({ x: L.houseDoor.x, z: L.houseDoor.z, r: 2.2, label: G.self.sleeping ? 'Bangun' : 'Masuk rumah (tidur)', run: () => openPanel('sleep') });
   out.push({ x: L.barnDoor.x, z: L.barnDoor.z, r: 2.4, label: 'Buka kandang', run: () => openPanel('barn') });
   out.push({ x: L.bin.x, z: L.bin.z, r: 2.4, label: 'Kotak pengiriman', run: () => openPanel('ship') });
-  out.push({ x: TOWN.store.door.x, z: TOWN.store.door.z, r: 3, label: 'Masuk Toko Umum', run: () => openPanel('shop') });
+  const doors = villagers.doors();
+  const storeDoor = doors.find((d) => d.house === 'store');
+  if (storeOpen(currentMinute())) {
+    out.push({ x: TOWN.store.door.x, z: TOWN.store.door.z, r: 3, label: 'Masuk Toko Umum', run: () => openPanel('shop') });
+  } else if (storeDoor?.ids.length) {
+    out.push({ x: TOWN.store.door.x, z: TOWN.store.door.z, r: 3, label: 'Toko tutup — ketuk pintu', run: () => knock(storeDoor) });
+  } else {
+    out.push({ x: TOWN.store.door.x, z: TOWN.store.door.z, r: 3, label: 'Toko Umum tutup (buka 08:00–18:00)', run: () => openPanel('shop') });
+  }
   out.push({ x: TOWN.market.door.x, z: TOWN.market.door.z, r: 3, label: 'Masuk Pasar Pemain', run: () => openPanel('market') });
+  out.push({ x: TOWN.board.x - 0.9, z: TOWN.board.z, r: 2.6, label: 'Lihat Papan Pesanan', run: () => openPanel('villagers', { tab: 'requests' }) });
+  for (const d of doors) {
+    if (d.house === 'store' || !d.ids.length) continue;
+    out.push({ x: d.x, z: d.z, r: 2.4, label: `Ketuk pintu ${d.name}`, run: () => knock(d) });
+  }
+  const me = G.me.position;
+  const npc = villagers.nearest(me.x, me.z, 2.6);
+  if (npc) {
+    const a = villagers.list.get(npc).avatar.position;
+    out.push({ x: a.x, z: a.z, r: 2.6, label: `Bicara dengan ${VILLAGERS[npc].name}`, run: () => G.talkTo(npc) });
+  }
   for (const p of G.players.values()) {
     if (p.info.id === G.self.id || !p.info.online || p.info.sleeping) continue;
     out.push({ x: p.avatar.position.x, z: p.avatar.position.z, r: 2, label: `Ajak ${p.info.name} berdagang`, run: () => G.request('trade:request', { target: p.info.id }).then((r) => r.ok && toast(r.msg)) });
   }
   return out;
 }
+
+function knock(door) {
+  G.sfx.play('knock');
+  if (door.ids.length === 1) G.talkTo(door.ids[0]);
+  else openPanel('knock', { name: door.name, ids: door.ids });
+}
+
+G.talkTo = async (id) => {
+  if (G.uiOpen || G.talking) return;
+  G.talking = true;
+  const res = await G.request('npc:talk', { npc: id });
+  G.talking = false;
+  if (!res.ok || G.uiOpen) return;
+  villagers.talkingTo = id;
+  G.sfx.play('chat');
+  openPanel('dialogue', { npc: id, res });
+};
+G.endTalk = () => { villagers.talkingTo = null; };
 
 function nearestInteractable() {
   const p = G.me.position;
@@ -625,6 +690,7 @@ function updateLocal(dt) {
     const moved = Math.hypot(nx - me.position.x, nz - me.position.z);
     me.position.x = nx;
     me.position.z = nz;
+    me.position.y = groundHeight(nx, nz);
     speed = moved / dt;
     const want = Math.atan2(dx, dz);
     let diff = want - me.rotation.y;
@@ -649,6 +715,7 @@ function updateRemotes(dt) {
     if (p.info.id === G.self.id || !p.avatar.visible) continue;
     const a = p.avatar;
     const before = a.position.clone();
+    p.target.y = groundHeight(p.target.x, p.target.z);
     a.position.lerp(p.target, Math.min(1, dt * 10));
     if (a.position.distanceTo(p.target) > 8) a.position.copy(p.target);
     let diff = p.ry - a.rotation.y;
@@ -715,6 +782,7 @@ function frame() {
       const it = nearestInteractable();
       showPrompt(hint || it?.label || (G.tool === 'rod' && nearWater(focus.x, focus.z, 1.8) && !G.fishing ? 'Spasi: lempar kail' : null));
     } else showPrompt(null);
+    villagers.update(dt, { minute, time: G.time, me: G.me.position, project, requests: G.requests, season: SEASONS[G.time.season].id });
     updateLabels(dt);
     updateClock(minute);
     minimapTimer -= dt;
@@ -725,6 +793,7 @@ function frame() {
     focus = new THREE.Vector3(0, 0, 0);
     camera.position.set(Math.sin(introAngle) * 46, 22, Math.cos(introAngle) * 46);
     camera.lookAt(0, 2, 0);
+    villagers.update(dt, { minute: 10 * 60, time: G.time, me: null, project, requests: [], season: SEASONS[G.time.season].id });
   }
   const season = SEASONS[G.time.season].id;
   world.update(dt, G.playing ? minute : 10 * 60, G.time.weather, focus);

@@ -207,9 +207,11 @@ export class World {
     this.scene.add(water);
     const b = new Builder();
     const rnd = mulberry32(99);
+    const nearPier = (a) => Math.abs(a - Math.PI) < 0.32;
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * Math.PI * 2;
-      addRock(b, P.x + Math.cos(a) * (P.r + 0.2), P.z + Math.sin(a) * (P.r + 0.2), 0.7 + rnd() * 0.5, 0x9a9fa4);
+      const s = 0.7 + rnd() * 0.5;
+      if (!nearPier(a)) addRock(b, P.x + Math.cos(a) * (P.r + 0.2), P.z + Math.sin(a) * (P.r + 0.2), s, 0x9a9fa4);
     }
     for (let i = 0; i < 7; i++) {
       const a = rnd() * Math.PI * 2, r = rnd() * (P.r - 1.5);
@@ -219,15 +221,21 @@ export class World {
     for (let i = 0; i < 12; i++) {
       const a = 2.2 + rnd() * 1.6;
       const x = P.x + Math.cos(a) * (P.r + 0.6), z = P.z + Math.sin(a) * (P.r + 0.6);
+      if (nearPier(a)) continue;
       b.add(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 3), 0x6a9a3a, { x, y: 0.6, z, rz: (rnd() - 0.5) * 0.3 });
       b.add(new THREE.CylinderGeometry(0.06, 0.06, 0.3, 5), 0x7a5232, { x, y: 1.1, z });
     }
     this.scene.add(b.mesh(vcMat, false));
     // Small pier for fishing.
+    const R = TOWN.pier;
     const pier = new Builder();
-    for (let i = 0; i < 5; i++) pier.add(new THREE.BoxGeometry(1.6, 0.12, 0.42), 0xb07a45, { x: P.x - P.r + 0.6 + i * 0.0, y: 0.25, z: P.z - 0.9 + i * 0.45, jitter: 0.1 });
-    pier.add(new THREE.BoxGeometry(0.15, 0.6, 0.15), 0x7a5232, { x: P.x - P.r - 0.1, y: 0.2, z: P.z - 1.0 });
-    pier.add(new THREE.BoxGeometry(0.15, 0.6, 0.15), 0x7a5232, { x: P.x - P.r - 0.1, y: 0.2, z: P.z + 1.0 });
+    const planks = 5, depth = (R.z1 - R.z0) / planks;
+    for (let i = 0; i < planks; i++) {
+      pier.add(new THREE.BoxGeometry(R.x1 - R.x0, 0.12, depth - 0.04), 0xb07a45, { x: (R.x0 + R.x1) / 2, y: R.y - 0.06, z: R.z0 + depth * (i + 0.5), jitter: 0.1 });
+    }
+    for (const x of [R.x0, R.x1]) {
+      for (const z of [R.z0 + 0.1, R.z1 - 0.1]) pier.add(new THREE.BoxGeometry(0.15, 0.7, 0.15), 0x7a5232, { x, y: 0.2, z });
+    }
     this.scene.add(pier.mesh());
   }
 
@@ -256,21 +264,30 @@ export class World {
       this.lampPositions.push([x, z]);
     }
     for (const x of [-30, -20, 20, 30]) { addLamp(b, x, -2.4); this.lampPositions.push([x, -2.4]); }
-    addBench(b, -4.5, 5.5, Math.PI + 0.6);
-    addBench(b, 4.5, 5.5, Math.PI - 0.6);
-    addBench(b, -5.5, -3, 1.2);
-    addBench(b, 5.5, -3, -1.2);
+    for (const [x, z, ry] of TOWN.benches) addBench(b, x, z, ry);
     // Market crates & produce stand in front of the market.
     for (let i = 0; i < 4; i++) {
       b.add(new THREE.BoxGeometry(0.7, 0.5, 0.6), 0xb07a45, { x: M.x - 3.2 + i * 2.1, y: 0.25, z: M.z + M.d / 2 + 1.4, jitter: 0.1 });
       b.add(new THREE.IcosahedronGeometry(0.28, 0), [0xe2412b, 0xf2c94c, 0x6fbf4a, 0xf08a1c][i], { x: M.x - 3.2 + i * 2.1, y: 0.6, z: M.z + M.d / 2 + 1.4, sy: 0.6, jitter: 0.2 });
     }
-    // Seed barrels outside the store.
+    // Seed barrels outside the store (left of the door).
     for (let i = 0; i < 3; i++) {
-      b.add(new THREE.CylinderGeometry(0.35, 0.3, 0.7, 8), 0x8a5a32, { x: S.x - 3 + i * 3, y: 0.35, z: S.z + S.d / 2 + 1.3 });
-      b.add(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 8), [0xd9c27a, 0x8fd16a, 0xc9a26b][i], { x: S.x - 3 + i * 3, y: 0.72, z: S.z + S.d / 2 + 1.3 });
+      const x = S.x - 3.6 + i * 1.05;
+      b.add(new THREE.CylinderGeometry(0.35, 0.3, 0.7, 8), 0x8a5a32, { x, y: 0.35, z: S.z + S.d / 2 + 1.0 });
+      b.add(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 8), [0xd9c27a, 0x8fd16a, 0xc9a26b][i], { x, y: 0.72, z: S.z + S.d / 2 + 1.0 });
     }
+    // Shop counter where Pak Darto serves customers.
+    const C = TOWN.counter;
+    b.add(new THREE.BoxGeometry(C.w, 0.85, C.d), 0x9a6a3a, { x: C.x, y: 0.43, z: C.z, jitter: 0.06 });
+    b.add(new THREE.BoxGeometry(C.w + 0.15, 0.08, C.d + 0.15), 0x7a4a22, { x: C.x, y: 0.88, z: C.z });
+    b.add(new THREE.IcosahedronGeometry(0.16, 0), 0x9ad46a, { x: C.x - 0.5, y: 1.0, z: C.z, jitter: 0.2 });
+    b.add(new THREE.IcosahedronGeometry(0.14, 0), 0xe2412b, { x: C.x - 0.15, y: 0.99, z: C.z + 0.05 });
+    b.add(new THREE.BoxGeometry(0.34, 0.12, 0.24), 0xf2c94c, { x: C.x + 0.45, y: 0.98, z: C.z });
     this.scene.add(b.mesh());
+    const hours = signMesh('🕗 Buka 08:00–18:00', { bg: '#7a4a2a', font: 50 }, 1.8);
+    hours.position.set(S.x, 1.98, S.z + S.d / 2 + 0.12);
+    this.scene.add(hours);
+    this.setupVillage();
 
     // Lamp bulbs glow at night.
     const bulbs = new Builder();
@@ -285,6 +302,80 @@ export class World {
       this.lampLights.push(l);
     }
     this.fountainSpray = this.makeSpray();
+  }
+
+  setupVillage() {
+    const H = TOWN.houses;
+    const doorSign = (house, text, bg, h) => {
+      const sign = signMesh(text, { bg, font: 54 }, 2.6);
+      const north = house.door === 'north';
+      sign.position.set(house.x, h + 0.25, house.z + (north ? -1 : 1) * (house.d / 2 + 0.12));
+      if (north) sign.rotation.y = Math.PI;
+      this.scene.add(sign);
+    };
+    const mayor = building({ w: H.mayor.w, d: H.mayor.d, h: 3.0, wall: 0xf2e6d0, roof: 0x7a4ab5, doorSide: 'north', windows: 2, chimney: true });
+    mayor.position.set(H.mayor.x, 0, H.mayor.z);
+    const hut = building({ w: H.hut.w, d: H.hut.d, h: 2.6, wall: 0xdccfb0, roof: 0x3f7fb5, doorSide: 'north', windows: 1 });
+    hut.position.set(H.hut.x, 0, H.hut.z);
+    const shop = building({ w: H.workshop.w, d: H.workshop.d, h: 2.9, wall: 0xb08a5a, roof: 0x6a4a2a, trim: 0xe8d4a8, doorSide: 'south', windows: 1 });
+    shop.position.set(H.workshop.x, 0, H.workshop.z);
+    this.scene.add(mayor, hut, shop);
+    doorSign(H.mayor, '🏛️ KEPALA DESA', '#5a3a8a', 3.0);
+    doorSign(H.hut, '🎣 PONDOK NELAYAN', '#2a5a8a', 2.6);
+    doorSign(H.workshop, '🪓 BENGKEL KAYU', '#6a4a2a', 2.9);
+
+    const b = new Builder();
+    // Flag pole in front of the village head's house (red and white).
+    const fx = H.mayor.x + 3.6, fz = H.mayor.z - H.mayor.d / 2 - 0.6;
+    b.add(new THREE.CylinderGeometry(0.05, 0.07, 4.2, 6), 0xd9d9d9, { x: fx, y: 2.1, z: fz });
+    b.add(new THREE.BoxGeometry(1.2, 0.36, 0.03), 0xd9382b, { x: fx + 0.62, y: 3.85, z: fz });
+    b.add(new THREE.BoxGeometry(1.2, 0.36, 0.03), 0xf6f6f6, { x: fx + 0.62, y: 3.49, z: fz });
+    for (let i = 0; i < 6; i++) addFlower(b, H.mayor.x - 2.6 + i * 0.35, H.mayor.z - H.mayor.d / 2 - 0.45, [0xf6a8c8, 0xf2c94c, 0xffffff][i % 3]);
+    // Fisherman's hut: barrel, oars and a drying rack with fish.
+    const hx = H.hut.x, hz = H.hut.z - H.hut.d / 2;
+    b.add(new THREE.CylinderGeometry(0.32, 0.28, 0.65, 8), 0x8a5a32, { x: hx + 1.9, y: 0.33, z: hz - 0.6 });
+    b.add(new THREE.BoxGeometry(0.08, 1.6, 0.18), 0xb07a45, { x: hx - 1.9, y: 0.8, z: hz - 0.25, rz: 0.3 });
+    b.add(new THREE.BoxGeometry(0.08, 1.6, 0.18), 0xb07a45, { x: hx - 1.6, y: 0.8, z: hz - 0.25, rz: -0.3 });
+    const rx = hx + 3.4;
+    b.add(new THREE.BoxGeometry(0.1, 1.5, 0.1), 0x7a5232, { x: rx - 0.8, y: 0.75, z: hz + 1 });
+    b.add(new THREE.BoxGeometry(0.1, 1.5, 0.1), 0x7a5232, { x: rx + 0.8, y: 0.75, z: hz + 1 });
+    b.add(new THREE.BoxGeometry(1.8, 0.07, 0.07), 0x7a5232, { x: rx, y: 1.45, z: hz + 1 });
+    for (let i = 0; i < 4; i++) b.add(new THREE.ConeGeometry(0.08, 0.38, 5), 0x8fb7d0, { x: rx - 0.55 + i * 0.37, y: 1.18, z: hz + 1, rx: Math.PI });
+    // Carpenter's workshop: log pile and a sawhorse.
+    const wx = H.workshop.x - H.workshop.w / 2 - 0.9, wz = H.workshop.z + 0.6;
+    const logs = [[0, 0.22], [0.42, 0.22], [-0.42, 0.22], [0.21, 0.58], [-0.21, 0.58], [0, 0.94]];
+    for (const [dz, y] of logs) b.add(new THREE.CylinderGeometry(0.21, 0.21, 1.5, 8), 0x8a5a32, { x: wx, y, z: wz + dz, rz: Math.PI / 2, jitter: 0.08 });
+    const sx = H.workshop.x + H.workshop.w / 2 + 1.0, sz = H.workshop.z - 0.2;
+    b.add(new THREE.BoxGeometry(1.4, 0.12, 0.2), 0xd9b27c, { x: sx, y: 0.8, z: sz });
+    for (const ox of [-0.55, 0.55]) {
+      b.add(new THREE.BoxGeometry(0.08, 0.85, 0.08), 0x7a5232, { x: sx + ox, y: 0.4, z: sz - 0.18, rx: 0.3 });
+      b.add(new THREE.BoxGeometry(0.08, 0.85, 0.08), 0x7a5232, { x: sx + ox, y: 0.4, z: sz + 0.18, rx: -0.3 });
+    }
+    // Request board on the road north of the plaza.
+    const B = TOWN.board;
+    b.add(new THREE.BoxGeometry(0.12, 2.2, 0.12), 0x7a5232, { x: B.x, y: 1.1, z: B.z - 0.85 });
+    b.add(new THREE.BoxGeometry(0.12, 2.2, 0.12), 0x7a5232, { x: B.x, y: 1.1, z: B.z + 0.85 });
+    b.add(new THREE.BoxGeometry(0.1, 1.15, 1.85), 0xb07a45, { x: B.x, y: 1.45, z: B.z, jitter: 0.05 });
+    b.add(new THREE.BoxGeometry(0.5, 0.08, 2.2), 0x7a3a2a, { x: B.x, y: 2.25, z: B.z });
+    this.scene.add(b.mesh());
+    const title = signMesh('📜 PESANAN WARGA', { bg: '#7a3a2a', font: 52 }, 1.7);
+    title.position.set(B.x - 0.07, 1.86, B.z);
+    title.rotation.y = -Math.PI / 2;
+    this.scene.add(title);
+    this.boardNotes = [];
+    const paper = new THREE.MeshStandardMaterial({ color: 0xfff6df, roughness: 0.9 });
+    for (let i = 0; i < 3; i++) {
+      const n = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.5), paper);
+      n.position.set(B.x - 0.07, 1.25 + (i % 2) * 0.06, B.z - 0.55 + i * 0.55);
+      n.rotation.set(0, -Math.PI / 2, (i - 1) * 0.08);
+      n.visible = false;
+      this.scene.add(n);
+      this.boardNotes.push(n);
+    }
+  }
+
+  setBoardNotes(count) {
+    this.boardNotes.forEach((n, i) => { n.visible = i < count; });
   }
 
   makeSpray() {
@@ -362,6 +453,16 @@ export class World {
     }
   }
 
+  // Areas decorations must not cover: villager homes, their doorways and the board.
+  blocked(x, z) {
+    const rects = [
+      ...Object.values(TOWN.houses).map((hs) => [hs.x - hs.w / 2 - 1.6, hs.z - hs.d / 2 - 1.6, hs.x + hs.w / 2 + 1.6, hs.z + hs.d / 2 + 1.6]),
+      [-15.2, -1, -12.8, 8.5], [11.3, -1, 13.7, 10.5], [-25.2, -4, -22.8, 0],
+      [TOWN.board.x - 1.5, TOWN.board.z - 1.5, TOWN.board.x + 1.5, TOWN.board.z + 1.5],
+    ];
+    return rects.some(([x0, z0, x1, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
+  }
+
   // --------------------------------------------------------- seasonal decor
 
   rebuildSeasonal(season) {
@@ -399,6 +500,7 @@ export class World {
       if (Math.abs(x - TOWN.store.x) < 6 && Math.abs(z - TOWN.store.z) < 6) continue;
       if (Math.abs(x - TOWN.market.x) < 6 && Math.abs(z - TOWN.market.z) < 6) continue;
       if (Math.abs(z) > 16.5) continue;
+      if (this.blocked(x, z)) continue;
       addBush(b, x, z, 0.8 + rnd() * 0.6, season);
     }
     if (season !== 'winter') {

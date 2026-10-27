@@ -133,7 +133,7 @@ export const HOUSES = {
 
 export const VILLAGERS = {
   darto: {
-    name: 'Pak Darto', role: 'Pemilik Toko Umum', icon: '🏪', speed: 2.6, home: 'store',
+    name: 'Pak Darto', role: 'Pemilik Toko Umum', icon: '🏪', speed: 2.6, home: 'store', color: '#3f8f5a',
     look: { skin: '#e0ac7e', hair: '#8f8f8f', hairStyle: 'short', hat: 'none', shirt: '#f4efe2', pants: '#4a4a52', apron: '#3f8f5a', mustache: '#6f6f6f', glasses: true, build: 'stout', backpack: false, overalls: false },
     birthday: { season: 0, day: 11 },
     loves: ['cabbage', 'golden_egg'], likes: ['potato', 'corn', 'pumpkin', 'egg', 'milk', 'bread'], dislikes: ['stone', 'fodder', 'shell'],
@@ -173,7 +173,7 @@ export const VILLAGERS = {
     },
   },
   ratna: {
-    name: 'Bu Ratna', role: 'Pengurus Pasar', icon: '⚖️', speed: 2.5, home: 'market',
+    name: 'Bu Ratna', role: 'Pengurus Pasar', icon: '⚖️', speed: 2.5, home: 'market', color: '#c4553b',
     look: { skin: '#c98e5c', hair: '#2a1d14', hairStyle: 'bun', hat: 'none', shirt: '#c4553b', pants: '#7a3a2a', skirt: '#7a3a2a', earrings: true, backpack: false, overalls: false },
     birthday: { season: 2, day: 9 },
     loves: ['premium_milk', 'pineapple', 'gem'], likes: ['tomato', 'strawberry', 'egg', 'grape', 'flower'], dislikes: ['fish_s', 'chestnut', 'lumber'],
@@ -213,7 +213,7 @@ export const VILLAGERS = {
     },
   },
   harjo: {
-    name: 'Kakek Harjo', role: 'Kepala Desa', icon: '🎋', speed: 1.5, home: 'mayor',
+    name: 'Kakek Harjo', role: 'Kepala Desa', icon: '🎋', speed: 1.5, home: 'mayor', color: '#3f6f5a',
     look: { skin: '#d9a066', hair: '#ececec', hairStyle: 'bald', hat: 'peci', shirt: '#3f6f5a', pants: '#5a4a3a', beard: '#f2f2f2', mustache: '#f2f2f2', cane: true, hunch: true, scale: 0.95, backpack: false, overalls: false },
     birthday: { season: 3, day: 15 },
     loves: ['herb', 'mushroom', 'sweetpotato'], likes: ['chestnut', 'onion', 'milk', 'bamboo', 'carrot'], dislikes: ['gem', 'shell'],
@@ -253,7 +253,7 @@ export const VILLAGERS = {
     },
   },
   dewi: {
-    name: 'Dewi', role: 'Cucu Kepala Desa', icon: '🎀', speed: 3.4, home: 'mayor',
+    name: 'Dewi', role: 'Cucu Kepala Desa', icon: '🎀', speed: 3.4, home: 'mayor', color: '#e8558a',
     look: { skin: '#f2c7a0', hair: '#4a2a1a', hairStyle: 'pigtails', hat: 'none', shirt: '#f6a8c8', pants: '#e8553e', skirt: '#e8553e', scale: 0.72, backpack: true, overalls: false },
     birthday: { season: 1, day: 6 },
     loves: ['strawberry', 'berry', 'golden_egg'], likes: ['flower', 'sunflower', 'shell', 'egg', 'grape'], dislikes: ['onion', 'eggplant', 'carrot'],
@@ -293,7 +293,7 @@ export const VILLAGERS = {
     },
   },
   bayu: {
-    name: 'Pak Bayu', role: 'Nelayan', icon: '🎣', speed: 2.5, home: 'hut',
+    name: 'Pak Bayu', role: 'Nelayan', icon: '🎣', speed: 2.5, home: 'hut', color: '#3e7ec8',
     look: { skin: '#a8703f', hair: '#2a1d14', hairStyle: 'short', hat: 'fisher', hatColor: '#c9b07a', shirt: '#3e8ee8', pants: '#3f5a4a', beard: '#2a1d14', build: 'stout', backpack: false, overalls: true },
     birthday: { season: 1, day: 22 },
     loves: ['fish_legend', 'fish_l'], likes: ['fish_m', 'fish_s', 'shell', 'onigiri', 'corn'], dislikes: ['flower', 'sunflower'],
@@ -334,7 +334,7 @@ export const VILLAGERS = {
     },
   },
   joko: {
-    name: 'Mas Joko', role: 'Tukang Kayu', icon: '🪓', speed: 2.9, home: 'workshop',
+    name: 'Mas Joko', role: 'Tukang Kayu', icon: '🪓', speed: 2.9, home: 'workshop', color: '#7a6a2a',
     look: { skin: '#b07a4a', hair: '#1a120c', hairStyle: 'spiky', hat: 'bandana', hatColor: '#d9382b', shirt: '#5a6a3a', pants: '#4a3a2a', toolbelt: true, scale: 1.05, backpack: false, overalls: true },
     birthday: { season: 2, day: 25 },
     loves: ['onigiri', 'pumpkin'], likes: ['lumber', 'stone', 'bread', 'corn', 'sweetpotato', 'milk'], dislikes: ['flower', 'strawberry'],
@@ -374,7 +374,7 @@ export const VILLAGERS = {
     },
   },
   lina: {
-    name: 'Lina', role: 'Perangkai Bunga', icon: '🌸', speed: 2.6, home: 'market',
+    name: 'Lina', role: 'Perangkai Bunga', icon: '🌸', speed: 2.6, home: 'market', color: '#e0783a',
     look: { skin: '#ffe0c4', hair: '#d9532b', hairStyle: 'long', hat: 'sunhat', hatColor: '#f6e2b0', shirt: '#fff6df', pants: '#9ad46a', skirt: '#9ad46a', backpack: false, overalls: false },
     birthday: { season: 0, day: 20 },
     loves: ['flower', 'sunflower'], likes: ['bamboo', 'herb', 'cucumber', 'grape', 'berry', 'egg'], dislikes: ['stone', 'lumber', 'fish_s'],
@@ -616,7 +616,8 @@ function pierHeight(x, z) {
 
 // ----------------------------------------------------------------- requests
 
-// Items a villager may ask for in a season (things players can realistically get).
+// Items a villager may ask for in a season: things players grow, raise, catch or gather
+// (never shop food, which would just be bought from Pak Darto).
 export function requestable(itemId, season, ITEMS) {
   const it = ITEMS[itemId];
   if (!it) return false;
@@ -625,7 +626,7 @@ export function requestable(itemId, season, ITEMS) {
     case 'forage': return !it.season || it.season === season;
     case 'animal': return itemId === 'egg' || itemId === 'milk';
     case 'fish': return itemId !== 'fish_legend';
-    case 'material': case 'food': return true;
+    case 'material': return true;
     default: return false;
   }
 }

@@ -31,6 +31,26 @@ Tes logika game: `npm test`.
 - Memancing di kolam kota dengan mini-game timing, dan barang musiman di hutan (rebutan dengan pemain lain!).
 - Peningkatan penyiram & kandang menggunakan emas + kayu + batu.
 
+**Warga desa (NPC)**
+
+| Warga | Peran | Rutinitas | Bonus di 5 ♥ |
+|---|---|---|---|
+| 🏪 Pak Darto | Pemilik Toko Umum | Melayani di konter 08:00–18:00, sore duduk di alun-alun | Diskon 10% di toko |
+| ⚖️ Bu Ratna | Pengurus Pasar | Menjaga lapak pasar, sore jalan-jalan | Hasil kiriman +5% |
+| 🎋 Kakek Harjo | Kepala Desa | Duduk di bangku alun-alun, mengobrol di depan toko | Stamina maksimal +20 |
+| 🎀 Dewi | Cucu kepala desa | Bermain di alun-alun, melihat ikan, mampir ke ladang | Kadang memberi hadiah pagi |
+| 🎣 Pak Bayu | Nelayan | Memancing di dermaga (juga saat hujan) | Lebih mudah dapat ikan besar |
+| 🪓 Mas Joko | Tukang kayu | Menebang di hutan barat, belanja, ke alun-alun | Biaya peningkatan -20% |
+| 🌸 Lina | Perangkai bunga | Menyiram taman bunga, berkunjung ke ladang-ladang | Menyiram 9 tanamanmu tiap pagi |
+
+- Setiap warga punya desain sendiri (celemek, kacamata, peci, jenggot, rok, topi nelayan, topi bunga, tongkat, anak kecil, dll.), rumah, dan jadwal harian yang berubah saat hujan/badai. Posisi warga dihitung dari jam game yang sama di server dan semua pemain, jadi semua orang melihat warga di tempat yang sama tanpa lalu lintas jaringan tambahan.
+- **Mengobrol** (E) sekali sehari menambah persahabatan; dialog bergantung waktu, cuaca, musim, tingkat hati, dan keadaan dunia (barang dicari, petani terkaya, hewan ternakmu, pemain lain).
+- **Hadiah**: satu per hari. Barang kesukaan memberi banyak hati, yang dibenci mengurangi. Hari ulang tahun warga = nilai 3×. Selera yang sudah kamu temukan tercatat di panel Warga (V).
+- **Hati** 0–10: hadiah dari warga di 3 & 8 hati, bonus khusus di 5 hati (lihat tabel).
+- **Pesanan Warga**: tiap pagi hingga 3 warga memasang pesanan di Papan Pesanan (utara alun-alun). Petani pertama yang mengantar mendapat upah besar + hati — pemain saling berlomba atau berdagang untuk memenuhinya.
+- Saat warga di dalam rumah (malam/hujan), ketuk pintunya untuk mengobrol sampai pukul 22:00.
+- Toko Umum hanya buka saat Pak Darto di konter (08:00–18:00).
+
 **Multiplayer & perdagangan**
 - Semua pemain berbagi satu desa dan jam yang sama, saling melihat bergerak, chat dengan balon kata.
 - Hari berganti saat **semua pemain online tidur** (atau otomatis pukul 02:00).
@@ -52,20 +72,21 @@ Tes logika game: `npm test`.
 | W A S D / panah | Jalan (Shift = lari) |
 | Mouse | Pilih petak target di dekatmu |
 | Spasi / klik kiri | Pakai alat |
-| E | Interaksi (pintu, toko, kotak kirim, kandang, panen, ajak dagang) |
+| E | Interaksi (bicara dengan warga, ketuk pintu, toko, kotak kirim, kandang, panen, ajak dagang) |
 | 1–7 | Ganti alat |
 | Q / R, klik kanan + seret | Putar kamera |
 | Scroll / Z X | Zoom |
-| I · M · P · H | Tas · Pasar · Pemain · Bantuan |
+| I · M · P · V · H | Tas · Pasar · Pemain · Warga · Bantuan |
 | Enter | Chat |
 
 ## Struktur
 
 ```
-server/game.js    logika game (server-authoritative): waktu, tanaman, ternak, ekonomi, pasar, dagang
+server/game.js    logika game (server-authoritative): waktu, tanaman, ternak, ekonomi, pasar, dagang, warga
 server/index.js   Express + Socket.IO, simpan otomatis
 shared/defs.js    data item/tanaman/hewan, layout dunia, tabrakan (dipakai server & client)
-client/js/        world (langit, kota, musim), farm (ladang & hewan), avatar (karakter),
+shared/villagers.js  warga: penampilan, jadwal & jalur jalan, selera hadiah, dialog, posisi deterministik
+client/js/        world (langit, kota, musim), farm (ladang & hewan), avatar (karakter), villagers (warga & potret),
                   models (model prosedural), fx (partikel, cuaca, suara), ui (HUD & panel), main (loop & jaringan)
 test/             tes logika game (node --test)
 ```

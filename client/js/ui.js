@@ -1,7 +1,11 @@
 import {
   ITEMS, CROPS, ANIMALS, SEASONS, WEATHER, TOOLS, CAN_LEVELS, BARN_LEVELS, MAX_LISTINGS, PREMIUM_AFFECTION,
-  PLOT_CENTERS, plotLayout, TOWN, FIELD_W, FIELD_H, WORLD_BOUNDS, formatTime, DAYS_PER_SEASON,
+  PLOT_CENTERS, plotLayout, TOWN, FIELD_W, FIELD_H, WORLD_BOUNDS, formatTime, DAYS_PER_SEASON, storeOpen,
 } from '/shared/defs.js';
+import {
+  VILLAGERS, VILLAGER_IDS, HEART, MAX_FRIENDSHIP, PERK_HEARTS, hearts, isBirthday, dayIndexOf, perkActive, storePrice,
+  upgradeGold,
+} from '/shared/villagers.js';
 
 let G = null;
 const $ = (id) => document.getElementById(id);
@@ -190,6 +194,10 @@ export function drawMinimap() {
     g.fillStyle = b === TOWN.store ? '#3f8f5a' : '#c4553b';
     g.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), b.w * sx, b.d * sz);
   }
+  g.fillStyle = '#8a6a9a';
+  for (const b of Object.values(TOWN.houses)) g.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), b.w * sx, b.d * sz);
+  g.fillStyle = '#7a3a2a';
+  g.fillRect(X(TOWN.board.x) - 2, Z(TOWN.board.z) - 3, 4, 6);
   for (let i = 0; i < PLOT_CENTERS.length; i++) {
     const L = plotLayout(i);
     const plot = G.plots[i];
@@ -202,6 +210,15 @@ export function drawMinimap() {
     }
     g.fillStyle = plot?.color || '#888';
     g.fillRect(X(L.house.x - 3), Z(L.house.z - 2.5), 6 * sx, 5 * sz);
+  }
+  // Villagers as small squares, players as circles on top.
+  for (const n of G.villagers?.list.values() || []) {
+    if (!n.avatar.visible) continue;
+    g.fillStyle = n.def.color;
+    g.strokeStyle = '#3b2e1e';
+    g.lineWidth = 1;
+    g.fillRect(X(n.avatar.position.x) - 2.5, Z(n.avatar.position.z) - 2.5, 5, 5);
+    g.strokeRect(X(n.avatar.position.x) - 2.5, Z(n.avatar.position.z) - 2.5, 5, 5);
   }
   for (const p of G.players.values()) {
     if (!p.info.online) continue;
@@ -223,6 +240,7 @@ export function openPanel(id, args = {}) {
   const def = PANELS[id];
   if (!def || !G.self) return;
   if (current?.id === 'trade' && id !== 'trade' && G.trade) return;
+  if (current && current.id !== id) PANELS[current.id].onClose?.(true);
   current = { id, tab: def.tabs ? def.tabs[0][0] : null, state: def.init ? def.init(args) : {}, args };
   G.sfx.play('open');
   G.uiOpen = true;
@@ -232,7 +250,7 @@ export function openPanel(id, args = {}) {
 export function closePanel(force = false) {
   if (!current) return;
   const def = PANELS[current.id];
-  if (!force && def.onClose && def.onClose() === false) return;
+  if (def.onClose && def.onClose(force) === false && !force) return;
   current = null;
   G.uiOpen = false;
   $('modalRoot').innerHTML = '';
@@ -250,6 +268,10 @@ export function refreshPanel(...ids) {
 function render() {
   const def = PANELS[current.id];
   const root = $('modalRoot');
+  if (def.custom) {
+    root.replaceChildren(h('div', { class: 'modal-backdrop clear', onclick: () => def.onBackdrop?.() }), def.render(current));
+    return;
+  }
   const oldBody = root.querySelector('.modal-body');
   const scroll = oldBody ? oldBody.scrollTop : 0;
   const focusKey = document.activeElement?.dataset?.key;
@@ -344,32 +366,50 @@ PANELS.inventory = {
 
 // ------------------------------------------------------------------ shop
 
+function shopBanner() {
+  if (!storeOpen(G.minute())) {
+    return h('div', { class: 'banner closed' }, '🔒 Toko sedang tutup. Pak Darto melayani pukul 08:00–18:00.');
+  }
+  if (perkActive(G.self.rel, 'darto')) return h('div', { class: 'banner perk' }, '💝 Diskon 10% dari Pak Darto untuk pelanggan setia!');
+  return null;
+}
+
+function priceTag(base) {
+  const p = storePrice(base, G.self.rel);
+  return p < base ? [h('s', { class: 'muted' }, `${fmt(base)}G`), ' ', `${fmt(p)}G`] : `${fmt(base)}G`;
+}
+
 PANELS.shop = {
-  icon: '🏪', title: 'Toko Umum', sub: () => `Uangmu: ${fmt(G.self.gold)}G`,
+  icon: '🏪', title: 'Toko Umum', sub: () => `Pak Darto · Uangmu: ${fmt(G.self.gold)}G`,
   tabs: [['seed', '🌱 Benih'], ['food', '🍞 Pakan & Makanan'], ['animal', '🐔 Hewan'], ['mat', '🪵 Material'], ['up', '⬆️ Peningkatan']],
   render(cur) {
-    const st = cur.state;
-    if (cur.tab === 'animal') return renderAnimalShop(st);
-    if (cur.tab === 'up') return renderUpgrades();
-    const types = { seed: ['seed'], food: ['feed', 'food'], mat: ['material'] }[cur.tab];
-    const list = Object.entries(ITEMS).filter(([, it]) => it.buy && types.includes(it.type) && (it.type !== 'seed' || it.season === seasonId()));
-    if (!list.length) return emptyState('❄️', 'Tidak ada benih di musim dingin. Fokus pada ternak, memancing & mencari barang di hutan!');
-    return h('div', { class: 'grid' }, list.map(([id, it], i) => {
-      const key = `q_${id}`;
-      const qty = st[key] || 1;
-      const crop = it.crop ? CROPS[it.crop] : null;
-      return h('div', { class: 'item-card', style: `animation-delay:${i * 25}ms` },
-        h('div', { class: 'item-icon' }, it.icon, it.cropIcon ? h('small', {}, it.cropIcon) : null),
-        h('div', { class: 'item-name' }, it.name),
-        h('div', { class: 'item-meta' }, crop
-          ? `${crop.days} hari${crop.regrow ? `, panen ulang ${crop.regrow} hari` : ''} · 3×3 petak · jual ${crop.sell}G`
-          : it.eat ? `Memulihkan ${it.eat} stamina` : it.type === 'feed' ? 'Pakan harian ternak' : 'Bahan bangunan'),
-        h('div', { class: 'price' }, `${it.buy}G`),
-        h('div', { class: 'row' }, stepper(st, key, 99),
-          h('button', { class: 'btn small primary', disabled: G.self.gold < it.buy * qty, onclick: () => req('buy', { item: id, qty: st[key] }, (r) => { toast(r.msg); G.sfx.play('coin'); }) }, 'Beli')));
-    }));
+    return h('div', { class: 'stack' }, shopBanner(), renderShopTab(cur));
   },
 };
+
+function renderShopTab(cur) {
+  const st = cur.state;
+  const open = storeOpen(G.minute());
+  if (cur.tab === 'animal') return renderAnimalShop(st);
+  if (cur.tab === 'up') return renderUpgrades();
+  const types = { seed: ['seed'], food: ['feed', 'food'], mat: ['material'] }[cur.tab];
+  const list = Object.entries(ITEMS).filter(([, it]) => it.buy && types.includes(it.type) && (it.type !== 'seed' || it.season === seasonId()));
+  if (!list.length) return emptyState('❄️', 'Tidak ada benih di musim dingin. Fokus pada ternak, memancing & mencari barang di hutan!');
+  return h('div', { class: 'grid' }, list.map(([id, it], i) => {
+    const key = `q_${id}`;
+    const qty = st[key] || 1;
+    const crop = it.crop ? CROPS[it.crop] : null;
+    return h('div', { class: 'item-card', style: `animation-delay:${i * 25}ms` },
+      h('div', { class: 'item-icon' }, it.icon, it.cropIcon ? h('small', {}, it.cropIcon) : null),
+      h('div', { class: 'item-name' }, it.name),
+      h('div', { class: 'item-meta' }, crop
+        ? `${crop.days} hari${crop.regrow ? `, panen ulang ${crop.regrow} hari` : ''} · 3×3 petak · jual ${crop.sell}G`
+        : it.eat ? `Memulihkan ${it.eat} stamina` : it.type === 'feed' ? 'Pakan harian ternak' : 'Bahan bangunan'),
+      h('div', { class: 'price' }, priceTag(it.buy)),
+      h('div', { class: 'row' }, stepper(st, key, 99),
+        h('button', { class: 'btn small primary', disabled: !open || G.self.gold < storePrice(it.buy, G.self.rel) * qty, onclick: () => req('buy', { item: id, qty: st[key] }, (r) => { toast(r.msg); G.sfx.play('coin'); }) }, 'Beli')));
+  }));
+}
 
 function renderAnimalShop(st) {
   const plot = G.plots[G.self.plotId];
@@ -385,14 +425,16 @@ function renderAnimalShop(st) {
         h('div', { class: 'item-name' }, a.name),
         h('div', { class: 'item-meta' }, `Menghasilkan ${itemIcon(a.product)} ${itemName(a.product)} · makan ${itemIcon(a.feed)} ${itemName(a.feed)}`),
         h('div', { class: 'item-meta' }, `Di kandang: ${have}/${lvl[type]}`),
-        h('div', { class: 'price' }, `${fmt(a.price)}G`),
+        h('div', { class: 'price' }, priceTag(a.price)),
         h('input', { type: 'text', placeholder: 'Nama hewan', maxlength: 12, value: st[key] || '', 'data-key': key, oninput: (e) => { st[key] = e.target.value; }, style: 'width:100%' }),
-        h('button', { class: 'btn small primary', disabled: full || G.self.gold < a.price, onclick: () => req('buyAnimal', { type, name: st[key] }, (r) => { toast(r.msg, 'gold'); G.sfx.play('coin'); st[key] = ''; }) }, full ? 'Kandang penuh' : 'Beli'));
+        h('button', { class: 'btn small primary', disabled: full || !storeOpen(G.minute()) || G.self.gold < storePrice(a.price, G.self.rel), onclick: () => req('buyAnimal', { type, name: st[key] }, (r) => { toast(r.msg, 'gold'); G.sfx.play('coin'); st[key] = ''; }) }, full ? 'Kandang penuh' : 'Beli'));
     })));
 }
 
 function costLine(cost) {
-  return [`${fmt(cost.gold)}G`, ...Object.entries(cost.items).map(([id, q]) => `${q} ${itemIcon(id)} (punya ${G.self.inv[id] || 0})`)].join(' + ');
+  const gold = upgradeGold(cost.gold, G.self.rel);
+  const goldText = gold < cost.gold ? `${fmt(gold)}G (hemat ${fmt(cost.gold - gold)}G berkat Mas Joko)` : `${fmt(gold)}G`;
+  return [goldText, ...Object.entries(cost.items).map(([id, q]) => `${q} ${itemIcon(id)} (punya ${G.self.inv[id] || 0})`)].join(' + ');
 }
 
 function renderUpgrades() {
@@ -404,7 +446,7 @@ function renderUpgrades() {
     h('div', { class: 'item-name' }, name),
     h('div', { class: 'item-meta' }, `Sekarang: ${now}`),
     next ? [h('div', { class: 'item-meta' }, `Berikutnya: ${next.name}`), h('div', { class: 'price' }, costLine(next.cost)),
-      h('button', { class: 'btn small gold', onclick: () => req('upgrade', { kind }, (r) => { toast(r.msg, 'gold'); G.sfx.play('trade'); }) }, 'Tingkatkan')]
+      h('button', { class: 'btn small gold', disabled: !storeOpen(G.minute()), onclick: () => req('upgrade', { kind }, (r) => { toast(r.msg, 'gold'); G.sfx.play('trade'); }) }, 'Tingkatkan')]
       : h('div', { class: 'tag ok' }, 'Maksimal ✨'));
   return h('div', { class: 'grid' },
     card('🚿', 'Penyiram', `${CAN_LEVELS[G.self.canLevel].name} (${CAN_LEVELS[G.self.canLevel].capacity} air)`, nextCan && { ...nextCan, name: `${nextCan.name} (${nextCan.capacity} air)` }, 'can'),
@@ -644,7 +686,7 @@ PANELS.sleep = {
 
 PANELS.help = {
   icon: '📖', title: 'Panduan Bertani',
-  tabs: [['keys', '🎮 Kontrol'], ['farm', '🌱 Bertani'], ['trade', '🤝 Berdagang']],
+  tabs: [['keys', '🎮 Kontrol'], ['farm', '🌱 Bertani'], ['village', '🏘️ Warga'], ['trade', '🤝 Berdagang']],
   render(cur) {
     const rows = (list) => h('table', { class: 'list' }, list.map(([k, v]) => h('tr', { class: 'data' }, h('td', { style: 'width:170px' }, h('b', {}, k)), h('td', {}, v))));
     if (cur.tab === 'keys') {
@@ -656,7 +698,7 @@ PANELS.help = {
         ['1 – 7', 'Ganti alat'],
         ['Q / R, Klik kanan + seret', 'Putar kamera'],
         ['Scroll / Z X', 'Zoom kamera'],
-        ['I · M · P · H', 'Tas · Pasar · Pemain · Bantuan'],
+        ['I · M · P · V · H', 'Tas · Pasar · Pemain · Warga · Bantuan'],
         ['Enter', 'Chat'],
         ['Esc', 'Tutup jendela'],
       ]);
@@ -674,6 +716,16 @@ PANELS.help = {
         ['Memancing', 'Berdiri di tepi kolam kota, pilih Pancing, tekan Spasi. Saat ❗ muncul, tekan Spasi lagi!'],
       ]);
     }
+    if (cur.tab === 'village') {
+      return rows([
+        ['👋 Mengobrol', 'Dekati warga lalu tekan E. Mengobrol sekali sehari menambah persahabatan.'],
+        ['🎁 Hadiah', 'Satu hadiah per warga per hari. Barang kesukaan = banyak hati; yang dibenci mengurangi hati. Di hari ulang tahun nilainya 3×!'],
+        ['💝 Hati', `Setiap ${HEART} poin = 1 hati (maks 10). Di 3 & 8 hati warga memberi hadiah; di ${PERK_HEARTS} hati kamu mendapat bonus khusus.`],
+        ['🕗 Jadwal', 'Warga punya rutinitas: bekerja, duduk di alun-alun, memancing, pulang. Saat hujan banyak yang di rumah — ketuk pintunya (sampai 22:00).'],
+        ['📜 Pesanan', 'Setiap pagi warga memasang pesanan di papan dekat alun-alun. Petani pertama yang mengantar barangnya mendapat upah & hati!'],
+        ['🏪 Toko', 'Toko Umum hanya buka saat Pak Darto di konter (08:00–18:00).'],
+      ]);
+    }
     return rows([
       ['📦 Kotak Pengiriman', 'Jual ke desa. Dibayar tiap pagi dengan harga pasar harian (naik-turun sesuai pasokan semua pemain).'],
       ['⚖️ Pasar Pemain', 'Pajang barangmu dengan harga sendiri. Pemain lain bisa membeli kapan saja, bahkan saat kamu offline.'],
@@ -683,6 +735,225 @@ PANELS.help = {
     ]);
   },
 };
+
+// -------------------------------------------------------------- villagers
+
+const vName = (id) => VILLAGERS[id].name;
+
+function heartRow(pts, small = false) {
+  const full = hearts(pts);
+  const part = ((pts || 0) % HEART) / HEART;
+  return h('div', { class: `hearts-row ${small ? 'small' : ''}`, title: `${pts || 0}/${MAX_FRIENDSHIP} poin` },
+    Array.from({ length: MAX_FRIENDSHIP / HEART }, (_, i) => h('span', { class: i < full ? 'on' : i === full && part > 0 ? 'half' : '' }, '♥')));
+}
+
+function portrait(id, cls = '') {
+  const src = G.portraits?.[id];
+  return h('div', { class: `portrait ${cls}`, style: `--c:${VILLAGERS[id].color}` },
+    src ? h('img', { src, alt: vName(id) }) : h('span', {}, VILLAGERS[id].icon));
+}
+
+function today() { return dayIndexOf(G.time); }
+
+function activeRequest(id) {
+  return (G.requests || []).find((q) => q.npc === id && !q.doneBy) || null;
+}
+
+// Typewriter text for the dialogue box (about 60 characters per second).
+let typer = null;
+function startTyping(el, st) {
+  clearInterval(typer);
+  const full = st.text;
+  const from = st.shown;
+  const t0 = performance.now();
+  const paint = () => {
+    el.textContent = full.slice(0, st.shown);
+    el.classList.toggle('done', st.shown >= full.length);
+  };
+  paint();
+  if (st.shown >= full.length) return;
+  let blip = 0;
+  typer = setInterval(() => {
+    st.shown = Math.min(full.length, from + Math.floor((performance.now() - t0) * 0.06));
+    if (st.shown - blip >= 6) { blip = st.shown; G.sfx.play('blip'); }
+    paint();
+    if (st.shown >= full.length) {
+      clearInterval(typer);
+      // Reveal the answer buttons once the line is fully shown.
+      if (panelOpen('dialogue') && current.state === st) render();
+    }
+  }, 30);
+}
+
+export function advanceDialogue() {
+  if (!panelOpen('dialogue')) return;
+  const st = current.state;
+  if (st.mode !== 'talk') { st.mode = 'talk'; render(); return; }
+  if (st.shown < st.text.length) {
+    st.shown = st.text.length;
+    render();
+    return;
+  }
+  if (st.queue.length) {
+    const next = st.queue.shift();
+    Object.assign(st, { text: next.text, note: next.note, shown: 0 });
+    G.sfx.play('trade');
+    render();
+    return;
+  }
+  closePanel();
+}
+
+// Shows the next line from a server reply (plus any friendship milestones).
+function dialogueReply(st, res) {
+  st.text = res.text;
+  st.shown = 0;
+  st.mode = 'talk';
+  st.note = null;
+  st.reaction = res.reaction || null;
+  for (const ev of res.events || []) {
+    const items = ev.items ? Object.entries(ev.items).map(([id, q]) => `${q} ${itemIcon(id)} ${itemName(id)}`).join(', ') : '';
+    const note = [`💝 ${ev.hearts} hati!`, items ? `Hadiah: ${items}` : '', ev.perk ? `✨ Bonus baru: ${ev.perk}` : ''].filter(Boolean).join(' · ');
+    st.queue.push({ text: ev.text, note });
+  }
+}
+
+PANELS.dialogue = {
+  custom: true,
+  init: (args) => {
+    const st = { npc: args.npc, queue: [] };
+    dialogueReply(st, args.res);
+    return st;
+  },
+  onBackdrop: () => advanceDialogue(),
+  onClose: () => { clearInterval(typer); G.endTalk?.(); },
+  render(cur) {
+    const st = cur.state;
+    const id = st.npc;
+    const v = VILLAGERS[id];
+    const rel = G.self.rel?.[id] || {};
+    const textEl = h('div', { class: 'dlg-text', onclick: () => advanceDialogue() });
+    const reqq = activeRequest(id);
+    const have = reqq ? G.self.inv[reqq.item] || 0 : 0;
+    const actions = [];
+    if (st.mode === 'talk' && st.shown >= st.text.length && !st.queue.length) {
+      actions.push(h('button', { class: 'btn small gold', onclick: () => { st.mode = 'gift'; render(); } }, rel.gifted === today() ? '🎁 Sudah diberi hadiah' : '🎁 Beri hadiah'));
+      if (reqq) {
+        actions.push(h('button', {
+          class: 'btn small blue', disabled: have < reqq.qty,
+          onclick: () => G.request('npc:deliver', { npc: id, id: reqq.id }).then((res) => {
+            if (!res.ok) return;
+            dialogueReply(st, res);
+            G.sfx.play('coin');
+            toast(`📜 Pesanan selesai! +${fmt(res.reward)}G`, 'gold');
+            render();
+          }),
+        }, `📜 Antar ${reqq.qty} ${itemIcon(reqq.item)} (punya ${have})`));
+      }
+      if (id === 'darto' && storeOpen(G.minute())) actions.push(h('button', { class: 'btn small primary', onclick: () => { closePanel(true); openPanel('shop'); } }, '🏪 Belanja'));
+      if (id === 'ratna') actions.push(h('button', { class: 'btn small primary', onclick: () => { closePanel(true); openPanel('market'); } }, '⚖️ Pasar'));
+      actions.push(h('button', { class: 'btn small', onclick: () => closePanel() }, 'Sampai jumpa 👋'));
+    }
+    let picker = null;
+    if (st.mode === 'gift') {
+      const inv = invEntries((iid, it) => it.type !== 'seed');
+      picker = h('div', { class: 'dlg-gift' },
+        h('div', { class: 'muted' }, `Pilih hadiah untuk ${v.name}${isBirthday(id, G.time) ? ' — hari ini ulang tahunnya (3×)!' : ''}:`),
+        inv.length ? h('div', { class: 'inv-mini' }, inv.map(([iid, q]) => {
+          const known = rel.known?.[iid];
+          return h('button', {
+            title: `${itemName(iid)}${known ? ` (${{ love: 'sangat suka', like: 'suka', neutral: 'biasa', dislike: 'tidak suka' }[known]})` : ''}`,
+            class: known ? `known-${known}` : '',
+            onclick: () => G.request('npc:gift', { npc: id, item: iid }).then((res) => {
+              if (!res.ok) return;
+              dialogueReply(st, res);
+              G.sfx.play(res.reaction === 'dislike' ? 'error' : res.reaction === 'already' ? 'click' : 'harvest');
+              render();
+            }),
+          }, itemIcon(iid), h('span', {}, q));
+        })) : h('div', { class: 'muted' }, 'Tasmu kosong.'),
+        h('button', { class: 'btn small', onclick: () => { st.mode = 'talk'; render(); } }, 'Batal'));
+    }
+    const box = h('div', { class: `dialogue ${st.reaction ? `react-${st.reaction}` : ''}` },
+      portrait(id, 'big'),
+      h('div', { class: 'dlg-main' },
+        h('div', { class: 'dlg-head' },
+          h('span', { class: 'dlg-name', style: `background:${v.color}` }, v.name),
+          h('span', { class: 'dlg-role' }, v.role),
+          isBirthday(id, G.time) ? h('span', { class: 'tag warn' }, '🎂 Ulang tahun!') : null,
+          heartRow(rel.pts)),
+        textEl,
+        st.note ? h('div', { class: 'dlg-note' }, st.note) : null,
+        picker,
+        actions.length ? h('div', { class: 'dlg-actions' }, actions) : null));
+    startTyping(textEl, st);
+    return box;
+  },
+};
+
+PANELS.knock = {
+  icon: '🚪', title: () => current?.state?.name || 'Rumah', sub: 'Siapa yang ingin kamu temui?', small: true,
+  init: (args) => args,
+  render(cur) {
+    return h('div', { class: 'stack' }, cur.state.ids.map((id) => h('button', {
+      class: 'btn knock-btn', onclick: () => { closePanel(true); G.talkTo(id); },
+    }, portrait(id), h('span', {}, h('b', {}, vName(id)), h('small', {}, VILLAGERS[id].role)))));
+  },
+};
+
+const REACT_LABEL = { love: 'Sangat suka', like: 'Suka', neutral: 'Biasa', dislike: 'Tidak suka' };
+
+PANELS.villagers = {
+  icon: '🏘️', title: 'Warga Desa', sub: 'Persahabatan, ulang tahun, selera hadiah & pesanan',
+  tabs: [['people', '👥 Warga'], ['requests', () => `📜 Pesanan (${(G.requests || []).filter((q) => !q.doneBy).length})`]],
+  init: (args) => ({ tab: args.tab }),
+  render(cur) {
+    if (cur.state.tab) { cur.tab = cur.state.tab; delete cur.state.tab; }
+    if (cur.tab === 'requests') return renderRequests();
+    return h('div', { class: 'grid villagers' }, VILLAGER_IDS.map((id, i) => {
+      const v = VILLAGERS[id];
+      const rel = G.self.rel?.[id] || {};
+      const known = Object.entries(rel.known || {});
+      const byKind = (k) => known.filter(([, r]) => r === k).map(([iid]) => itemIcon(iid)).join(' ');
+      const season = SEASONS[v.birthday.season];
+      const perkOn = perkActive(G.self.rel, id);
+      return h('div', { class: 'item-card villager-card', style: `animation-delay:${i * 30}ms` },
+        h('div', { class: 'row' }, portrait(id),
+          h('div', { style: 'flex:1;min-width:0' },
+            h('div', { class: 'item-name' }, v.name, ' ', isBirthday(id, G.time) ? '🎂' : ''),
+            h('div', { class: 'muted' }, v.role),
+            heartRow(rel.pts, true))),
+        h('div', { class: 'item-meta' }, `🎂 ${season.icon} ${season.name} ${v.birthday.day}`, ' · ', `📍 ${G.villagers?.locationLabel(id) || ''}`),
+        h('div', { class: 'row' },
+          h('span', { class: `tag ${rel.talked === today() ? 'ok' : ''}` }, rel.talked === today() ? '💬 Sudah ngobrol' : '💬 Belum ngobrol'),
+          h('span', { class: `tag ${rel.gifted === today() ? 'ok' : ''}` }, rel.gifted === today() ? '🎁 Sudah' : '🎁 Belum')),
+        known.length ? h('div', { class: 'item-meta tastes' },
+          byKind('love') ? h('div', {}, '😍 ', byKind('love')) : null,
+          byKind('like') ? h('div', {}, '🙂 ', byKind('like')) : null,
+          byKind('dislike') ? h('div', {}, '😣 ', byKind('dislike')) : null)
+          : h('div', { class: 'item-meta' }, rel.met ? 'Beri hadiah untuk mengetahui seleranya.' : 'Belum berkenalan — sapa dia!'),
+        h('div', { class: `perk ${perkOn ? 'on' : ''}` }, `✨ ${PERK_HEARTS}♥: ${v.perk.text}`));
+    }));
+  },
+};
+
+function renderRequests() {
+  const list = G.requests || [];
+  if (!list.length) return emptyState('📜', 'Belum ada pesanan. Pesanan baru dipasang setiap pagi.');
+  return h('div', { class: 'stack' },
+    h('div', { class: 'muted' }, 'Antar barangnya langsung ke warga yang memesan. Siapa cepat dia dapat — petani lain juga bisa mengambil pesanan ini!'),
+    list.map((q, i) => {
+      const it = ITEMS[q.item];
+      const have = G.self.inv[q.item] || 0;
+      const left = q.expires - today() + 1;
+      return h('div', { class: `player-row request ${q.doneBy ? 'done' : ''}`, style: `animation-delay:${i * 40}ms` },
+        portrait(q.npc),
+        h('div', { style: 'flex:1' },
+          h('b', {}, `${vName(q.npc)} ingin ${q.qty} ${it.icon} ${it.name}`),
+          h('div', { class: 'muted' }, q.doneBy ? `✅ Diselesaikan oleh ${q.doneBy}` : `📍 ${G.villagers?.locationLabel(q.npc) || ''} · ⏳ ${left} hari lagi · Kamu punya ${have}/${q.qty}`)),
+        h('div', { class: 'price' }, `+${fmt(q.reward)}G`), h('span', { class: 'tag' }, '+♥'));
+    }));
+}
 
 // ------------------------------------------------------------- day report
 
@@ -695,12 +966,13 @@ export function showDayStart(rep, onDone) {
     h('div', {}, `${season.icon} ${season.name}, Hari ${rep.day} · Tahun ${rep.year} · ${WEATHER[rep.weather].name}`),
     rep.lines.length ? h('div', { class: 'report' }, h('b', {}, '📦 Hasil pengiriman kemarin'), lines,
       h('div', { class: 'report-total' }, h('span', {}, 'Total'), h('span', {}, `+${fmt(rep.total)}G`))) : null,
+    rep.notes?.length ? h('div', { class: 'report notes' }, rep.notes.map((n) => h('div', { class: 'report-line' }, n))) : null,
     h('div', { class: 'muted', style: 'margin-top:16px;color:#bbb' }, 'Klik untuk melanjutkan'));
   const fade = $('fade');
   fade.classList.add('show');
   const done = () => { fade.classList.remove('show'); fade.onclick = null; onDone?.(); };
   fade.onclick = done;
-  setTimeout(done, rep.lines.length ? 5500 : 3000);
+  setTimeout(done, rep.lines.length || rep.notes?.length ? 6000 : 3000);
 }
 
 export function updateSleepPanel() { refreshPanel('sleep'); }

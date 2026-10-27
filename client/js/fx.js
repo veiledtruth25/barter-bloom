@@ -71,6 +71,10 @@ export const FX_STYLE = {
   splash: { colors: [0x6ac0f0, 0xbfe8ff, 0xffffff], count: 30, up: 5, speed: 2 },
   ship: { colors: [0xffe066, 0xf2c94c], count: 18, up: 3, speed: 1, gravity: 3, life: 1 },
   eat: { colors: [0xff7b9a, 0xffd0dc], count: 12, up: 2.5, speed: 0.8, gravity: 2, life: 1 },
+  npc_love: { colors: [0xff4f8b, 0xff9ac1, 0xffd0e2], count: 26, up: 2.2, speed: 0.9, gravity: 0.8, life: 1.6, size: 0.2 },
+  npc_like: { colors: [0xff9ac1, 0xffe066], count: 16, up: 1.8, speed: 0.7, gravity: 0.8, life: 1.3, size: 0.17 },
+  npc_neutral: { colors: [0xfff6c0], count: 8, up: 1.4, speed: 0.5, gravity: 0.8, life: 1, size: 0.14 },
+  npc_dislike: { colors: [0x6a6f74, 0x9aa0a6], count: 14, up: 1.2, speed: 0.6, gravity: 0.4, life: 1.2, size: 0.22 },
 };
 
 // Rain / snow / seasonal ambience around the camera.
@@ -219,6 +223,8 @@ export class Sfx {
       case 'close': this.tone(620, 0.06, 'sine', 0.05, -200); break;
       case 'click': this.tone(800, 0.03, 'sine', 0.05); break;
       case 'chat': this.tone(700, 0.05, 'sine', 0.05); this.tone(900, 0.05, 'sine', 0.05, 0, 0.05); break;
+      case 'blip': this.tone(520 + Math.random() * 120, 0.035, 'triangle', 0.025); break;
+      case 'knock': [0, 0.14, 0.28].forEach((d) => this.tone(150, 0.07, 'square', 0.07, -40, d)); break;
       case 'morning': [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.25, 'sine', 0.07, 0, i * 0.12)); break;
       case 'trade': [660, 880, 1100].forEach((f, i) => this.tone(f, 0.15, 'triangle', 0.07, 0, i * 0.08)); break;
       default: break;
