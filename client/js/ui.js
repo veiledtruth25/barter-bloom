@@ -576,7 +576,7 @@ function renderBuild(sid) {
           h('button', {
             class: 'btn small gold', disabled: !shopIsOpen(sid) || !!job || G.self.gold < gold || !hasItems(next.cost.items),
             onclick: () => req('build', { kind }, (r) => { toast(r.msg, 'gold'); G.sfx.play('trade'); }),
-          }, '🔨 Bangun')]
+          }, job ? '⏳ Mas Joko sedang sibuk' : '🔨 Bangun')]
           : h('div', { class: 'tag ok' }, 'Sudah paling besar ✨'));
   };
   return h('div', { class: 'stack' },
@@ -609,7 +609,7 @@ function renderForge(sid) {
             h('button', {
               class: 'btn small gold', disabled: !shopIsOpen(sid) || !!job || G.self.gold < next.cost.gold || !hasItems(next.cost.items),
               onclick: () => req('forge', { tool }, (r) => { toast(r.msg, 'gold'); G.sfx.play('stone'); }),
-            }, '⚒️ Tempa')]
+            }, job ? '⏳ Satu per satu' : '⚒️ Tempa')]
             : h('div', { class: 'tag ok' }, 'Alat terbaik ✨'));
     })));
 }
@@ -1075,8 +1075,21 @@ PANELS.dialogue = {
         if (s.npc === id && shopIsOpen(sid)) actions.push(h('button', { class: 'btn small primary', onclick: () => { closePanel(true); openPanel('shop', { shop: sid }); } }, `${s.icon} ${SHOP_ACTION[sid]}`));
       }
       if (id === 'ratna') actions.push(h('button', { class: 'btn small primary', onclick: () => { closePanel(true); openPanel('market'); } }, '⚖️ Pasar'));
-      // The village head runs the festivals.
+      // Festival dates: invite this villager to dance / watch the fireworks / dine with you.
       const fest = todayFestival();
+      const act = fest && FEST_ACT[fest.activity];
+      if (act && festivalLive(fest) && !G.self.festDone?.[festivalKey(fest)]) {
+        actions.push(h('button', {
+          class: 'btn small gold',
+          onclick: () => G.request('festival:join', { npc: id }).then((res) => {
+            if (!res.ok) return;
+            dialogueReply(st, { ...res, reaction: 'love' });
+            G.sfx.play('morning');
+            render();
+          }),
+        }, act.btn));
+      }
+      // The village head runs the festivals.
       if (id === 'harjo' && (festivalLive(fest) || (fest?.activity === 'contest' && G.minute() >= fest.start))) {
         actions.push(h('button', { class: 'btn small gold', onclick: () => { closePanel(true); openPanel('festival'); } }, `${fest.icon} ${fest.name}`));
       }

@@ -29,27 +29,47 @@ Tes logika game: `npm test`.
 - Stamina: setiap alat memakai tenaga. Makan hasil panen/roti atau tidur untuk pulih. Begadang sampai 02:00 = pingsan.
 - Ternak ayam & sapi: beri makan setiap hari, elus untuk menaikkan kasih sayang → produk premium (Telur Emas, Susu Premium).
 - Memancing di kolam kota dengan mini-game timing, dan barang musiman di hutan (rebutan dengan pemain lain!).
-- Peningkatan penyiram & kandang menggunakan emas + kayu + batu.
+- Alat bisa ditempa jadi **Tembaga → Perak → Emas** (pakai emas + bijih logam dari batu): cangkul, penyiram & sabit mengenai 3 petak sebaris lalu 3×3 (lebih hemat stamina per petak), penyiram menampung lebih banyak air, kapak & palu makin hemat tenaga dan menghasilkan lebih banyak kayu/bijih langka, pancing menangkap ikan lebih besar.
+- Rumah & kandang bisa diperbesar tukang kayu (kayu + batu + emas): rumah lebih besar = stamina maksimal naik, kandang lebih besar = muat lebih banyak ternak.
 
-**Warga desa (NPC)**
+**Warga desa ala Harvest Moon**
 
-| Warga | Peran | Rutinitas | Bonus di 5 ♥ |
-|---|---|---|---|
-| 🏪 Pak Darto | Pemilik Toko Umum | Melayani di konter 08:00–18:00, sore duduk di alun-alun | Diskon 10% di toko |
-| ⚖️ Bu Ratna | Pengurus Pasar | Menjaga lapak pasar, sore jalan-jalan | Hasil kiriman +5% |
-| 🎋 Kakek Harjo | Kepala Desa | Duduk di bangku alun-alun, mengobrol di depan toko | Stamina maksimal +20 |
-| 🎀 Dewi | Cucu kepala desa | Bermain di alun-alun, melihat ikan, mampir ke ladang | Kadang memberi hadiah pagi |
-| 🎣 Pak Bayu | Nelayan | Memancing di dermaga (juga saat hujan) | Lebih mudah dapat ikan besar |
-| 🪓 Mas Joko | Tukang kayu | Menebang di hutan barat, belanja, ke alun-alun | Biaya peningkatan -20% |
-| 🌸 Lina | Perangkai bunga | Menyiram taman bunga, berkunjung ke ladang-ladang | Menyiram 9 tanamanmu tiap pagi |
+Setiap peran penting di Harvest Moon punya padanannya di desa ini, dengan fungsi yang sama. Toko hanya buka saat pemiliknya ada di konter, dan tutup saat festival.
 
-- Setiap warga punya desain sendiri (celemek, kacamata, peci, jenggot, rok, topi nelayan, topi bunga, tongkat, anak kecil, dll.), rumah, dan jadwal harian yang berubah saat hujan/badai. Posisi warga dihitung dari jam game yang sama di server dan semua pemain, jadi semua orang melihat warga di tempat yang sama tanpa lalu lintas jaringan tambahan.
+| Warga | Fungsi di desa | Padanan di Harvest Moon | Jam buka | Bonus di 5 ♥ |
+|---|---|---|---|---|
+| 🏪 Pak Darto | Toko Kelontong: benih musiman, roti, Bulu Biru | Supermarket | 08:00–18:00 | Diskon 10% |
+| 📦 Mas Danu | Kurir: tiap sore mengangkut isi kotak pengiriman semua ladang; uangnya dibayar besok pagi | Pengirim hasil panen (*shipper*) | keliling ±15:30–19:30 | Kiriman yang terlambat tetap dibayar |
+| ⚒️ Pak Bejo | Pandai besi: menempa alat dengan bijih tembaga/perak/emas, selesai keesokan pagi | Pandai besi | 10:00–16:00 | Tempa kilat (langsung jadi) |
+| 🪚 Mas Joko 💍 | Tukang kayu: memperbesar rumah & kandang (selesai besok pagi), menjual kayu & batu | Tukang kayu | 09:00–16:00 | Biaya emas bangunan -20% |
+| 🐄 Pak Jaya | Peternakan: menjual ayam, sapi & pakan | Peternakan (ranch) | 08:00–16:00 | Ternak +1 kasih sayang/hari |
+| 🍲 Ayu 💍 | Kedai: makanan pemulih stamina (teh, nasi kepal, nasi goreng, soto) | Penginapan & restoran (inn) | 11:00–21:00 | Diskon 20% |
+| 🩺 Dokter Raka 💍 | Klinik: periksa kesehatan gratis, jamu & ramuan pemulih | Klinik & dokter | 09:00–16:00 | Diskon obat 25% |
+| 🎋 Kakek Harjo | Kepala desa: mengumumkan festival dan memandu acaranya | Wali kota (*mayor*) | — | Stamina maksimal +20 |
+| 🎣 Pak Bayu | Nelayan, memancing di dermaga hampir sepanjang hari | Nelayan | — | Lebih mudah dapat ikan besar |
+| 🌸 Lina 💍 | Perangkai bunga, menyiram taman bunga desa | Gadis toko bunga | — | Menyiram 9 tanamanmu tiap pagi |
+| 🎀 Dewi | Cucu kepala desa yang ceria | Anak-anak desa | — | Kadang memberi hadiah pagi |
+| ⚖️ Bu Ratna | Pengurus Pasar Pemain (tempat jual-beli antar pemain) | — (khusus multiplayer) | — | Hasil kiriman +5% |
+| ✨ Dewi Panen | Penjaga mata air di hutan timur: terima satu persembahan sehari | Harvest Goddess | — | Buah Kekuatan di 200/500/900 poin (+10 stamina maks) |
+
+💍 = calon pasangan.
+
+- Setiap warga punya desain 3D sendiri, rumah/tempat kerja, dan jadwal harian yang berubah saat hujan, badai, dan hari festival. Posisi warga dihitung dari jam game yang sama di server dan semua pemain, jadi semua orang melihat warga di tempat yang sama tanpa lalu lintas jaringan tambahan.
 - **Mengobrol** (E) sekali sehari menambah persahabatan; dialog bergantung waktu, cuaca, musim, tingkat hati, dan keadaan dunia (barang dicari, petani terkaya, hewan ternakmu, pemain lain).
 - **Hadiah**: satu per hari. Barang kesukaan memberi banyak hati, yang dibenci mengurangi. Hari ulang tahun warga = nilai 3×. Selera yang sudah kamu temukan tercatat di panel Warga (V).
 - **Hati** 0–10: hadiah dari warga di 3 & 8 hati, bonus khusus di 5 hati (lihat tabel).
 - **Pesanan Warga**: tiap pagi hingga 3 warga memasang pesanan di Papan Pesanan (utara alun-alun). Petani pertama yang mengantar mendapat upah besar + hati — pemain saling berlomba atau berdagang untuk memenuhinya.
 - Saat warga di dalam rumah (malam/hujan), ketuk pintunya untuk mengobrol sampai pukul 22:00.
-- Toko Umum hanya buka saat Pak Darto di konter (08:00–18:00).
+- **Menikah**: capai 10 hati dengan calon pasangan, perbesar rumah jadi *Rumah + Dapur*, lalu berikan **Bulu Biru**. Pasangan pindah ke rumah ladangmu, menyiram halaman di sore hari, dan menyiapkan *Bekal Cinta* setiap pagi. Setiap warga hanya bisa menikah dengan satu pemain.
+- **Festival** di alun-alun (lihat 📅 Kalender di panel Warga); toko tutup dan semua warga berkumpul:
+
+| Tanggal | Festival | Acara |
+|---|---|---|
+| Semi 8 | 🌷 Festival Bunga | Ajak satu warga menari (+1 hati) |
+| Panas 20 | 🏆 Lomba Ternak | Daftarkan ternak tersayangmu; juara (+2000G & piala) diumumkan pukul 15:00 |
+| Panas 24 | 🎆 Festival Kembang Api | Menonton kembang api bersama warga pilihan |
+| Gugur 13 | 🍲 Festival Panen | Masukkan bahan ke kuali besar; seluruh warga mencicipi supnya |
+| Dingin 24 | ⭐ Malam Bintang | Makan malam istimewa bersama warga pilihan |
 
 **Multiplayer & perdagangan**
 - Semua pemain berbagi satu desa dan jam yang sama, saling melihat bergerak, chat dengan balon kata.
@@ -72,7 +92,7 @@ Tes logika game: `npm test`.
 | W A S D / panah | Jalan (Shift = lari) |
 | Mouse | Pilih petak target di dekatmu |
 | Spasi / klik kiri | Pakai alat |
-| E | Interaksi (bicara dengan warga, ketuk pintu, toko, kotak kirim, kandang, panen, ajak dagang) |
+| E | Interaksi (bicara dengan warga, ketuk pintu, toko, kotak kirim, kandang, panen, festival, mata air Dewi, ajak dagang) |
 | 1–7 | Ganti alat |
 | Q / R, klik kanan + seret | Putar kamera |
 | Scroll / Z X | Zoom |
@@ -82,9 +102,10 @@ Tes logika game: `npm test`.
 ## Struktur
 
 ```
-server/game.js    logika game (server-authoritative): waktu, tanaman, ternak, ekonomi, pasar, dagang, warga
+server/game.js    logika game (server-authoritative): waktu, tanaman, ternak, ekonomi, pasar, dagang, warga,
+                  toko, kurir, pandai besi, tukang kayu, pernikahan, festival, Dewi Panen
 server/index.js   Express + Socket.IO, simpan otomatis
-shared/defs.js    data item/tanaman/hewan, layout dunia, tabrakan (dipakai server & client)
+shared/defs.js    data item/tanaman/hewan, toko & jam buka, level alat & bangunan, festival, layout dunia, tabrakan
 shared/villagers.js  warga: penampilan, jadwal & jalur jalan, selera hadiah, dialog, posisi deterministik
 client/js/        world (langit, kota, musim), farm (ladang & hewan), avatar (karakter), villagers (warga & potret),
                   models (model prosedural), fx (partikel, cuaca, suara), ui (HUD & panel), main (loop & jaringan)

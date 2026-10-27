@@ -59,7 +59,7 @@ const G = {
   village: { fest: null, marriages: {} }, homes: {},
   time: { day: 1, season: 0, year: 1, minute: 360, weather: 'sunny', tomorrow: 'sunny', rate: 2 },
   timeSync: performance.now(), tool: 'hoe', selectedItem: null, uiOpen: false, trade: null, fishing: null, sfx: new Sfx(),
-  cam: { yaw: 0.6, pitch: 0.75, dist: 15, targetDist: 15 },
+  cam: { yaw: 0.6, pitch: 0.75, dist: 15, targetDist: 15, userPitchAt: 0 },
   selectTool(id) {
     if (G.tool === id) return;
     G.tool = id;
@@ -202,8 +202,8 @@ function connect(name, look) {
     const v = VILLAGERS[npc];
     toast(`💒 ${name} dan ${v.name} menikah! Selamat!`, 'gold');
     G.sfx.play('morning');
-    // Fireworks over the plaza for everyone; the happy couple gets a shower of petals.
-    celebrate(0, 0, 9);
+    // Fireworks for everyone; the happy couple gets a shower of petals.
+    celebrate(9);
     if (pid === G.self?.id && G.me) {
       hop(G.me);
       particles.burst(G.me.position.x, 1.6, G.me.position.z, FX_STYLE.wedding);
@@ -410,6 +410,7 @@ canvas.addEventListener('mousemove', (e) => {
   if (mouse.dragging) {
     G.cam.yaw -= (e.clientX - mouse.lastX) * 0.006;
     G.cam.pitch = Math.max(0.3, Math.min(1.35, G.cam.pitch + (e.clientY - mouse.lastY) * 0.004));
+    G.cam.userPitchAt = performance.now();
     mouse.moved += Math.abs(e.clientX - mouse.lastX);
   }
   mouse.lastX = e.clientX;
@@ -550,6 +551,7 @@ function interactables() {
     const at = { x: s.door.x, z: s.door.z, r: 3 };
     if (shopOpen(sid, minute, fest)) out.push({ ...at, label: `Masuk ${s.name}`, run: () => openPanel('shop', { shop: sid }) });
     else if (door?.ids.length) out.push({ ...at, label: `${s.name} tutup — ketuk pintu`, run: () => knock(door) });
+    else if (fest && minute >= s.open && minute < s.close) out.push({ ...at, label: `${s.name} tutup — ${VILLAGERS[s.npc].name} ke ${fest.name}`, run: () => openPanel('shop', { shop: sid }) });
     else out.push({ ...at, label: `${s.name} tutup (buka ${shopHours(sid)})`, run: () => openPanel('shop', { shop: sid }) });
   }
   out.push({ x: TOWN.market.door.x, z: TOWN.market.door.z, r: 3, label: 'Masuk Pasar Pemain', run: () => openPanel('market') });
@@ -563,7 +565,7 @@ function interactables() {
   out.push({ x: TOWN.spring.x, z: TOWN.spring.z, r: TOWN.spring.r + 2.4, label: '✨ Panggil Dewi Panen', run: () => openGoddess() });
   // Festival activities at the plaza fountain.
   if (fest && (festivalLive(fest, minute) || (fest.activity === 'contest' && minute >= fest.start))) {
-    out.push({ x: TOWN.fountain.x, z: TOWN.fountain.z, r: 4.6, label: `${fest.icon} Ikut ${fest.name}`, run: () => openPanel('festival') });
+    out.push({ x: TOWN.fountain.x, z: TOWN.fountain.z, r: 3.4, priority: 2, label: `${fest.icon} Ikut ${fest.name}`, run: () => openPanel('festival') });
   }
   const me = G.me.position;
   const npc = villagers.nearest(me.x, me.z, 2.6);
@@ -589,28 +591,53 @@ function openGoddess() {
   villagers.showGoddess(scene, true);
   particles.burst(TOWN.spring.x, 0.6, TOWN.spring.z, FX_STYLE.goddess);
   G.sfx.play('morning');
+  G.camSaved = { yaw: G.cam.yaw, pitch: G.cam.pitch, targetDist: G.cam.targetDist };
   openPanel('goddess');
 }
-G.endGoddess = () => villagers.releaseGoddess();
+G.endGoddess = () => {
+  villagers.releaseGoddess();
+  if (G.camSaved) Object.assign(G.cam, G.camSaved);
+  G.camSaved = null;
+};
 
-// Fireworks: the summer festival over the pond, and weddings over the plaza.
-let fireworkTimer = 0;
-const celebration = { until: 0, x: 0, z: 0 };
-function celebrate(x, z, seconds) {
-  Object.assign(celebration, { until: performance.now() + seconds * 1000, x, z });
+// While you talk to the goddess the camera frames you both from the side.
+function frameGoddess(focus, dt) {
+  const g = villagers.goddess.position;
+  let diff = Math.atan2(focus.x - g.x, focus.z - g.z) + 0.85 - G.cam.yaw;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  G.cam.yaw += diff * Math.min(1, dt * 2.5);
+  G.cam.pitch += (0.42 - G.cam.pitch) * Math.min(1, dt * 2.5);
+  G.cam.targetDist = 8;
+  focus.set((focus.x + g.x) / 2, 0.5, (focus.z + g.z) / 2);
 }
+
+// Fireworks: the summer festival show and village weddings.
+let fireworkTimer = 0;
+let celebrateUntil = 0;
+function celebrate(seconds) { celebrateUntil = performance.now() + seconds * 1000; }
 
 function updateFireworks(dt, minute) {
   const fest = festivalOf(G.time.season, G.time.day);
   const show = fest?.activity === 'watch' && minute >= fest.start && minute < fest.end;
-  if (!show && performance.now() > celebration.until) return;
+  if (!show && performance.now() > celebrateUntil) return;
+  const me = G.me.position;
+  // At the plaza the camera tilts up to the sky (unless you moved it yourself just now).
+  const atPlaza = Math.hypot(me.x - TOWN.fountain.x, me.z - TOWN.fountain.z) < 16;
+  if (show && atPlaza && !G.uiOpen && !mouse.dragging && performance.now() - G.cam.userPitchAt > 8000) {
+    G.cam.pitch += (0.3 - G.cam.pitch) * Math.min(1, dt * 0.8);
+  }
   fireworkTimer -= dt;
   if (fireworkTimer > 0) return;
-  fireworkTimer = 0.45 + Math.random();
-  const c = show ? TOWN.pond : celebration;
-  const x = c.x + (Math.random() - 0.5) * 14, z = c.z + (Math.random() - 0.5) * 10;
-  firework(particles, x, 14 + Math.random() * 8, z);
-  if (G.me && Math.hypot(G.me.position.x - x, G.me.position.z - z) < 80) G.sfx.play('firework');
+  fireworkTimer = show ? 0.45 + Math.random() : 0.3 + Math.random() * 0.5;
+  // Rockets burst in front of the camera so they are always in view; wedding ones are small and low.
+  const fx = -Math.sin(G.cam.yaw), fz = -Math.cos(G.cam.yaw);
+  const d = show ? 16 + Math.random() * 10 : 5 + Math.random() * 6;
+  const side = (Math.random() - 0.5) * (show ? 20 : 10);
+  const x = me.x + fx * d - fz * side, z = me.z + fz * d + fx * side;
+  if (show) firework(particles, x, 6 + Math.random() * 4, z);
+  else firework(particles, x, 2.5 + Math.random() * 2.5, z, 0.45);
+  G.sfx.play('firework');
 }
 
 G.talkTo = async (id) => {
@@ -630,7 +657,9 @@ function nearestInteractable() {
   let best = null, bd = Infinity;
   for (const it of interactables()) {
     const d = Math.hypot(it.x - p.x, it.z - p.z);
-    if (d < it.r && d < bd) { bd = d; best = it; }
+    // Fixed spots like the festival fountain win over villagers standing around them.
+    const score = d - (it.priority || 0);
+    if (d < it.r && score < bd) { bd = score; best = it; }
   }
   return best;
 }
@@ -817,14 +846,39 @@ function updateRemotes(dt) {
   }
 }
 
+// Building volumes the camera should not hide behind: [x0, z0, x1, z1, height].
+const CAM_BLOCKERS = (() => {
+  const out = [];
+  const add = (b, hgt = 4.6) => out.push([b.x - b.w / 2 - 0.3, b.z - b.d / 2 - 0.3, b.x + b.w / 2 + 0.3, b.z + b.d / 2 + 0.3, hgt]);
+  add(TOWN.store);
+  add(TOWN.market);
+  for (const b of Object.values(TOWN.houses)) add(b);
+  for (let i = 0; i < PLOT_CENTERS.length; i++) {
+    const L = plotLayout(i);
+    add(L.house, 6);
+    add(L.barn);
+  }
+  return out;
+})();
+
+function cameraBlocked(x, y, z) {
+  return CAM_BLOCKERS.some(([x0, z0, x1, z1, hgt]) => x > x0 && x < x1 && z > z0 && z < z1 && y < hgt);
+}
+
+const _camDir = new THREE.Vector3();
 function updateCamera(dt, focus) {
   const c = G.cam;
   c.dist += (c.targetDist - c.dist) * Math.min(1, dt * 6);
-  const want = new THREE.Vector3(
-    focus.x + Math.sin(c.yaw) * Math.cos(c.pitch) * c.dist,
-    focus.y + Math.sin(c.pitch) * c.dist,
-    focus.z + Math.cos(c.yaw) * Math.cos(c.pitch) * c.dist,
-  );
+  _camDir.set(Math.sin(c.yaw) * Math.cos(c.pitch), Math.sin(c.pitch), Math.cos(c.yaw) * Math.cos(c.pitch));
+  // Move in front of a building that would hide the player.
+  let dist = c.dist;
+  for (let s = 1.5; s < c.dist; s += 0.5) {
+    if (cameraBlocked(focus.x + _camDir.x * s, focus.y + 0.8 + _camDir.y * s, focus.z + _camDir.z * s)) {
+      dist = Math.max(2.5, s - 0.6);
+      break;
+    }
+  }
+  const want = focus.clone().addScaledVector(_camDir, dist);
   camera.position.lerp(want, Math.min(1, dt * 8));
   camera.lookAt(focus.x, focus.y + 0.8, focus.z);
 }
@@ -865,6 +919,7 @@ function frame() {
     updateRemotes(dt);
     updateFishing(dt);
     focus = G.me.position.clone();
+    if (panelOpen('goddess') && villagers.goddess?.visible) frameGoddess(focus, dt);
     updateCamera(dt, focus);
     const t = computeTarget();
     updateMarker(t);

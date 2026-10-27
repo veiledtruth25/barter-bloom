@@ -1283,7 +1283,7 @@ export class Game {
       if (id === 'harjo') return FEST_HOST[fest.id];
       if (this.rng() < 0.7) return this.pick(FEST_TALK[fest.id]);
     }
-    if (p.spouse === id && t.spouse && this.rng() < 0.7) return this.pick(t.spouse);
+    if (p.spouse === id && t.spouse && this.rng() < 0.7) return this.pick(m >= 17 * 60 && t.spouseNight ? t.spouseNight : t.spouse);
     const tod = m < 11 * 60 ? 'morning' : m < 17 * 60 ? 'day' : m < 21 * 60 ? 'evening' : 'night';
     const req = this.activeRequest(id);
     if (req && this.rng() < 0.5) return this.requestText(id, req);
@@ -1316,7 +1316,8 @@ export class Game {
     } else if (isBirthday(npc, this.world) && r.talked !== today) text = v.talk.birthday;
     else text = this.pickLine(p, npc);
     text = fillText(text, this.textVars(p));
-    if (s.hidden) text = `(dari balik pintu) ${text}`;
+    // Through the door, unless it is your own home.
+    if (s.hidden && p.spouse !== npc) text = `(dari balik pintu) ${text}`;
     let events = [];
     let gained = 0;
     if (r.talked !== today) {

@@ -263,3 +263,15 @@ test('the Harvest Goddess accepts one offering a day and grants power berries', 
   assert.equal(game.maxStamina(p), before + 10);
   assert.ok(ITEMS.power_berry);
 });
+
+test('a spouse greets you at home in the evening, not through the door', () => {
+  const { game, players: [p] } = setup();
+  game.world.marriages.ayu = p.id;
+  p.spouse = 'ayu';
+  game.relOf(p, 'ayu').met = true;
+  game.world.minute = 23 * 60;
+  const s = meet(game, p, 'ayu');
+  assert.equal(s.spot, `plotHome${p.plotId}`);
+  const r = game.npcTalk(p, { npc: 'ayu' });
+  assert.ok(VILLAGERS.ayu.talk.spouseNight.includes(r.text), r.text);
+});

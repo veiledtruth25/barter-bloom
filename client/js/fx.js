@@ -88,9 +88,9 @@ export const FX_STYLE = {
 };
 
 const FIREWORK_COLORS = [[0xff4f6b, 0xffd0d8], [0x6ac0f0, 0xffffff], [0xf2c94c, 0xff8a2a], [0x9ad46a, 0xfff3b0], [0xc77bff, 0xffd6f0]];
-export function firework(particles, x, y, z) {
+export function firework(particles, x, y, z, scale = 1) {
   const colors = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
-  particles.burst(x, y, z, { sphere: true, count: 90, colors, speed: 9, gravity: 1.6, life: 2.2, size: 1.6, spread: 0 });
+  particles.burst(x, y, z, { sphere: true, count: 90, colors, speed: 9 * scale, gravity: 1.6 * scale, life: 2.2, size: 1.6 * scale, spread: 0 });
 }
 
 // Rain / snow / seasonal ambience around the camera.
