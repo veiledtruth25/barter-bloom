@@ -1,7 +1,9 @@
 // Villagers (NPCs): looks, schedules, gift tastes and dialogue.
 // A villager's position is a pure function of the game clock, so every client
 // and the server agree on where everyone is without any network traffic.
-import { TOWN, WILD_TREES, DAYS_PER_SEASON, DAY_END_MIN, mulberry32 } from './defs.js';
+import {
+  TOWN, WILD_TREES, DAYS_PER_SEASON, DAY_END_MIN, PLOT_CENTERS, FESTIVAL_GATHER, mulberry32, festivalOf,
+} from './defs.js';
 
 export const HEART = 100;
 export const MAX_FRIENDSHIP = 1000;
@@ -15,26 +17,51 @@ export const hearts = (pts) => Math.floor((pts || 0) / HEART);
 export const PERK_HEARTS = 5;
 // rel: a player's relationship map { villagerId: { pts, ... } }.
 export const perkActive = (rel, id) => hearts(rel?.[id]?.pts) >= PERK_HEARTS;
-export const storePrice = (base, rel) => (perkActive(rel, 'darto') ? Math.round(base * 0.9) : base);
+// Shopkeepers give friends a discount on what they sell.
+const SHOP_PERK = { store: ['darto', 0.9], kedai: ['ayu', 0.8], clinic: ['raka', 0.75] };
+export function shopPrice(shopId, base, rel) {
+  const perk = SHOP_PERK[shopId];
+  return perk && perkActive(rel, perk[0]) ? Math.round(base * perk[1]) : base;
+}
 export const upgradeGold = (gold, rel) => (perkActive(rel, 'joko') ? Math.round(gold * 0.8) : gold);
 export const dayIndexOf = (w) => (w.year - 1) * 4 * DAYS_PER_SEASON + w.season * DAYS_PER_SEASON + (w.day - 1);
+export function festivalOfDay(dayIdx) {
+  return festivalOf(Math.floor(dayIdx / DAYS_PER_SEASON) % 4, (dayIdx % DAYS_PER_SEASON) + 1);
+}
 const h = (hh, mm = 0) => hh * 60 + mm;
 
 // ------------------------------------------------------------------ road network
 
+const ROAD_N = -19.8, ROAD_S = 19.2;
 const NODES = {
   p0: [5.2, 0], p1: [3.68, 3.68], p2: [0, 5.2], p3: [-3.68, 3.68],
   p4: [-5.2, 0], p5: [-3.68, -3.68], p6: [0, -5.2], p7: [3.68, -3.68],
-  W10: [-10, -0.4], W12: [-12, -0.4], W14: [-14, -0.4], W24: [-24, -0.4], W40: [-40, -0.4],
-  E10: [10, -0.4], E12: [12, -0.4], E17: [17.5, -0.4],
-  VN10: [-0.5, -10], VN: [-0.5, -19.8], VS10: [-0.5, 10], VS: [-0.5, 19.2],
+  W10: [-10, -0.4], W12: [-12, -0.4], W14: [-14, -0.4], W24: [-24, -0.4], W29: [-29.4, -0.4], W40: [-40, -0.4],
+  E10: [10, -0.4], E12: [12, -0.4], E17: [17.5, -0.4], EX: [31.5, -0.4], E50: [50, -0.4],
+  VN10: [-0.5, -10], VN: [-0.5, ROAD_N], VS10: [-0.5, 10], VS: [-0.5, ROAD_S],
+  NFG: [-24, ROAD_N], NX: [31.5, ROAD_N], SX: [31.5, ROAD_S],
 };
+// Farm-road nodes at each plot's house corridor (W) and shipping bin (B).
+for (let i = 0; i < 4; i++) {
+  const cx = PLOT_CENTERS[i][0];
+  NODES[`NW${i}`] = [cx - 5, ROAD_N];
+  NODES[`NB${i}`] = [cx + 12.6, ROAD_N];
+  NODES[`SW${i}`] = [cx - 5, ROAD_S];
+  NODES[`SB${i}`] = [cx + 12.6, ROAD_S];
+}
 const EDGES = [
   ['p0', 'p1'], ['p1', 'p2'], ['p2', 'p3'], ['p3', 'p4'], ['p4', 'p5'], ['p5', 'p6'], ['p6', 'p7'], ['p7', 'p0'],
-  ['p4', 'W10'], ['W10', 'W12'], ['W12', 'W14'], ['W14', 'W24'], ['W24', 'W40'],
-  ['p0', 'E10'], ['E10', 'E12'], ['E12', 'E17'],
+  ['p4', 'W10'], ['W10', 'W12'], ['W12', 'W14'], ['W14', 'W24'], ['W24', 'W29'], ['W29', 'W40'],
+  ['p0', 'E10'], ['E10', 'E12'], ['E12', 'E17'], ['E17', 'EX'], ['EX', 'E50'],
   ['p6', 'VN10'], ['VN10', 'VN'], ['p2', 'VS10'], ['VS10', 'VS'],
+  // Grass paths linking the farm roads on the west and east sides of town.
+  ['NB0', 'W29'], ['W29', 'SB0'], ['NX', 'EX'], ['EX', 'SX'],
 ];
+// Each farm road is a chain of its nodes from west to east.
+for (const z of [ROAD_N, ROAD_S]) {
+  const ids = Object.keys(NODES).filter((k) => NODES[k][1] === z).sort((a, b) => NODES[a][0] - NODES[b][0]);
+  for (let i = 1; i < ids.length; i++) EDGES.push([ids[i - 1], ids[i]]);
+}
 
 const NODE_IDS = Object.keys(NODES);
 const NEXT = (() => {
@@ -105,7 +132,18 @@ export const SPOTS = {
   mayorIn: { pos: [-14, 7.7], node: 'W14', hidden: true, label: 'Rumah Kepala Desa', house: 'mayor' },
   hutIn: { pos: [12.5, 10.0], node: 'E12', path: [[12.3, 2.5]], hidden: true, label: 'Pondok Nelayan', house: 'hut' },
   workshopIn: { pos: [-24, -3.2], node: 'W24', hidden: true, label: 'Bengkel Kayu', house: 'workshop' },
-  workshopFront: { pos: [-21.8, -2.9], node: 'W24', ry: 0, pose: 'idle', label: 'Depan Bengkel Kayu' },
+  carpCounter: { pos: [-21.9, -3.25], node: 'W24', path: [[-23.2, -1.6], [-23.2, -3.25]], ry: 0, pose: 'shop', label: 'Bengkel Kayu' },
+  depotIn: { pos: [25.5, -16.6], node: 'NB2', hidden: true, label: 'Gudang Ekspedisi', house: 'depot' },
+  forgeIn: { pos: [-24, -16.6], node: 'NFG', hidden: true, label: 'Pandai Besi', house: 'forge' },
+  forgeCounter: { pos: [-21.8, -16.6], node: 'NFG', path: [[-20.4, -19.0], [-20.4, -16.6]], ry: Math.PI, pose: 'shop', label: 'Pandai Besi' },
+  ranchIn: { pos: [-24, 7.1], node: 'W24', hidden: true, label: 'Peternakan', house: 'ranch' },
+  ranchCounter: { pos: [-21.6, 7.15], node: 'W24', path: [[-19.9, 5.6], [-19.9, 7.15]], ry: Math.PI, pose: 'shop', label: 'Peternakan' },
+  ranchPen: { pos: [-24, 15.4], node: 'W29', path: [[-29.4, 15.4]], pose: 'idle', wander: { type: 'disc', r: 1.8, every: 10 }, label: 'Kandang Peternakan' },
+  innIn: { pos: [-6.5, 12.15], node: 'VS10', path: [[-2.6, 10.6], [-6.5, 10.8]], hidden: true, label: 'Kedai', house: 'kedai' },
+  innCounter: { pos: [-4.2, 12.2], node: 'VS10', path: [[-2.4, 10.8], [-2.4, 12.2]], ry: Math.PI, pose: 'shop', label: 'Kedai Ayu' },
+  innFront: { pos: [-6.5, 10.2], node: 'VS10', path: [[-2.6, 10.4]], wander: { type: 'disc', r: 1.3, every: 10 }, label: 'Depan Kedai' },
+  clinicIn: { pos: [5.8, 12.15], node: 'VS10', path: [[5.8, 10.8]], hidden: true, label: 'Klinik', house: 'clinic' },
+  clinicCounter: { pos: [7.6, 12.2], node: 'VS10', path: [[9.3, 10.8], [9.3, 12.2]], ry: Math.PI, pose: 'shop', label: 'Klinik Desa' },
   benchA: { pos: [benchA[0], benchA[1]], node: 'p3', ry: benchA[2], pose: 'sit', label: 'Bangku Alun-alun' },
   benchB: { pos: [benchB[0], benchB[1]], node: 'p1', ry: benchB[2], pose: 'sit', label: 'Bangku Alun-alun' },
   benchC: { pos: [benchC[0], benchC[1]], node: 'p5', ry: benchC[2], pose: 'sit', label: 'Bangku Alun-alun' },
@@ -121,36 +159,58 @@ export const SPOTS = {
   farmS: { pos: [-0.5, 19.2], node: 'VS', ry: 0, pose: 'wave', wander: { type: 'line', x0: -44, z0: 19.2, x1: 46, z1: 19.2, maxStep: 14, every: 26 }, label: 'Jalan Ladang Selatan' },
 };
 
+// Per-plot spots: the farmhouse (where a spouse lives), the yard and the shipping bin.
+for (let k = 0; k < PLOT_CENTERS.length; k++) {
+  const [cx, cz] = PLOT_CENTERS[k];
+  const oz = cz - 3, i = k % 4, side = cz < 0 ? 'N' : 'S';
+  SPOTS[`plotHome${k}`] = { pos: [cx - 4.9, oz + 2.5], node: `${side}W${i}`, hidden: true, label: 'Rumah ladang', plot: k };
+  SPOTS[`plotYard${k}`] = { pos: [cx - 4.8, oz + 6.5], node: `${side}W${i}`, ry: Math.PI / 2, pose: 'water', label: 'Ladang', plot: k };
+  SPOTS[`bin${k}`] = { pos: [cx + 12.6, oz + 1.5], node: `${side}B${i}`, ry: -Math.PI / 2, pose: 'idle', label: 'Kotak pengiriman ladang', bin: k };
+}
+
+// Festival gathering: a ring around the fountain plus the village head's stage.
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+  const x = Math.cos(a) * 5.5, z = Math.sin(a) * 5.5;
+  SPOTS[`fest${i}`] = { pos: [x, z], node: `p${Math.round(a / (Math.PI / 4)) % 8}`, ry: Math.atan2(-x, -z), pose: 'festival', label: 'Festival di alun-alun' };
+}
+SPOTS.festHost = { pos: [0, -3.2], node: 'p6', ry: 0, pose: 'festival', label: 'Panggung festival' };
+
 export const HOUSES = {
-  store: { name: 'Toko Umum', spot: 'storeIn' },
+  store: { name: 'Toko Kelontong', spot: 'storeIn', shop: 'store' },
   market: { name: 'Pasar Pemain', spot: 'marketIn', noKnock: true },
   mayor: { name: 'Rumah Kepala Desa', spot: 'mayorIn' },
   hut: { name: 'Pondok Nelayan', spot: 'hutIn' },
-  workshop: { name: 'Bengkel Kayu', spot: 'workshopIn' },
+  workshop: { name: 'Bengkel Kayu', spot: 'workshopIn', shop: 'carpenter' },
+  depot: { name: 'Gudang Ekspedisi', spot: 'depotIn' },
+  forge: { name: 'Pandai Besi', spot: 'forgeIn', shop: 'forge' },
+  ranch: { name: 'Peternakan Jaya', spot: 'ranchIn', shop: 'ranch' },
+  kedai: { name: 'Kedai Ayu', spot: 'innIn', shop: 'kedai' },
+  clinic: { name: 'Klinik Desa', spot: 'clinicIn', shop: 'clinic' },
 };
 
 // ------------------------------------------------------------------- villagers
 
 export const VILLAGERS = {
   darto: {
-    name: 'Pak Darto', role: 'Pemilik Toko Umum', icon: '🏪', speed: 2.6, home: 'store', color: '#3f8f5a',
+    name: 'Pak Darto', role: 'Pemilik Toko Kelontong', icon: '🏪', speed: 2.6, home: 'store', color: '#3f8f5a',
     look: { skin: '#e0ac7e', hair: '#8f8f8f', hairStyle: 'short', hat: 'none', shirt: '#f4efe2', pants: '#4a4a52', apron: '#3f8f5a', mustache: '#6f6f6f', glasses: true, build: 'stout', backpack: false, overalls: false },
     birthday: { season: 0, day: 11 },
     loves: ['cabbage', 'golden_egg'], likes: ['potato', 'corn', 'pumpkin', 'egg', 'milk', 'bread'], dislikes: ['stone', 'fodder', 'shell'],
-    perk: { kind: 'discount', text: 'Diskon 10% di Toko Umum' },
+    perk: { kind: 'discount', text: 'Diskon 10% di Toko Kelontong' },
     gifts: { 3: { bread: 3 }, 8: { onigiri: 5 } },
     schedule: {
       default: [[0, 'storeIn'], [h(7, 30), 'storeCounter'], [h(18), 'benchD'], [h(20), 'storeIn']],
       rain: [[0, 'storeIn'], [h(7, 30), 'storeCounter'], [h(18), 'storeIn']],
     },
     talk: {
-      intro: 'Wah, petani baru! Selamat datang di Desa Bloom. Saya Darto, pemilik Toko Umum. Benih, pakan, makanan — semua ada. Toko buka pukul 08:00 sampai 18:00, ya!',
+      intro: 'Wah, petani baru! Selamat datang di Desa Bloom. Saya Darto, pemilik Toko Kelontong. Benih musim ini, roti, sampai Bulu Biru untuk melamar — semua ada. Buka pukul 08:00 sampai 18:00, ya!',
       morning: ['Pagi, {name}! Benih segar baru datang pagi ini.', 'Sudah sarapan? Petani butuh tenaga, lho.'],
-      day: ['Siang-siang begini enaknya menyiram tanaman... kalau sudah, ya istirahat sebentar.', 'Kalau butuh pakan ternak, jangan sungkan mampir.'],
+      day: ['Siang-siang begini enaknya menyiram tanaman... kalau sudah, ya istirahat sebentar.', 'Benih musim ini sudah lengkap, tinggal pilih.'],
       evening: ['Toko sudah tutup, tapi ngobrol tetap gratis, haha!', 'Hari yang panjang, ya? Duduk sebentar di sini enak.'],
       night: ['Sudah malam, {name}. Pulanglah, tidur yang cukup.'],
       rain: ['Hujan begini tanamanmu tidak perlu disiram. Hemat tenaga!'],
-      snow: ['Musim dingin benih tidak laku, untung pakan ternak tetap dicari.'],
+      snow: ['Musim dingin benih tidak laku, untung roti hangat tetap dicari.'],
       spring: ['Musim semi! Benih kentang dan stroberi paling laris.'],
       summer: ['Jagung dan tomat cocok sekali untuk musim panas.'],
       fall: ['Musim gugur waktunya labu dan ubi!'],
@@ -334,21 +394,21 @@ export const VILLAGERS = {
     },
   },
   joko: {
-    name: 'Mas Joko', role: 'Tukang Kayu', icon: '🪓', speed: 2.9, home: 'workshop', color: '#7a6a2a',
+    name: 'Mas Joko', role: 'Tukang Kayu', icon: '🪚', speed: 2.9, home: 'workshop', color: '#7a6a2a', candidate: true,
     look: { skin: '#b07a4a', hair: '#1a120c', hairStyle: 'spiky', hat: 'bandana', hatColor: '#d9382b', shirt: '#5a6a3a', pants: '#4a3a2a', toolbelt: true, scale: 1.05, backpack: false, overalls: true },
     birthday: { season: 2, day: 25 },
     loves: ['onigiri', 'pumpkin'], likes: ['lumber', 'stone', 'bread', 'corn', 'sweetpotato', 'milk'], dislikes: ['flower', 'strawberry'],
-    perk: { kind: 'upgrade', text: 'Biaya peningkatan (emas) -20%' },
+    perk: { kind: 'upgrade', text: 'Biaya bangunan (emas) -20%' },
     gifts: { 3: { lumber: 20 }, 8: { lumber: 50, stone: 30 } },
     schedule: {
-      default: [[0, 'workshopIn'], [h(7, 30), 'forestW'], [h(15), 'storeSide'], [h(16, 30), 'plazaN'], [h(19), 'workshopIn']],
-      rain: [[0, 'workshopIn'], [h(8), 'workshopFront'], [h(17), 'workshopIn']],
+      default: [[0, 'workshopIn'], [h(6, 30), 'forestW'], [h(8, 40), 'carpCounter'], [h(16), 'forestW'], [h(17, 30), 'innFront'], [h(19), 'workshopIn']],
+      rain: [[0, 'workshopIn'], [h(8, 40), 'carpCounter'], [h(16), 'workshopIn']],
     },
     talk: {
-      intro: 'Hmph. Kamu petani baru? Aku Joko, tukang kayu. Ladangmu penuh tunggul, ya? Tebang saja — kayunya berguna untuk memperbesar kandang.',
+      intro: 'Hmph. Kamu petani baru? Aku Joko, tukang kayu. Mau perbesar kandang atau perluas rumah? Datang ke bengkelku, 09:00–16:00. Bawa kayu yang cukup.',
       morning: ['Pagi. Kayu hari ini bagus.', 'Kerja keras dari pagi, hasilnya pasti kelihatan.'],
       day: ['*tok tok* ...Oh, kamu. Ada apa?', 'Kayu yang bagus berasal dari pohon yang tumbuh perlahan.'],
-      evening: ['Badan pegal semua... tapi puas.', 'Butuh kayu? Coba cari di Pasar Pemain. Lebih murah daripada di toko.'],
+      evening: ['Badan pegal semua... tapi puas.', 'Kayu kurang? Aku jual, tapi menebang sendiri lebih hemat.'],
       night: ['Sudah malam. Tukang kayu juga butuh tidur.'],
       rain: ['Hujan. Kayu basah susah dipotong. Hari ini aku di bengkel saja.'],
       snow: ['Musim dingin, waktunya memperbaiki atap rumah warga.'],
@@ -368,13 +428,17 @@ export const VILLAGERS = {
       birthdayGift: '...Kamu ingat? Hmph. ...Terima kasih.',
       request: 'Aku butuh {qty} {item} untuk proyek balai desa. Bisa? {reward}G.',
       thanks: 'Bagus. Pekerjaanmu rapi. Ini bayarannya.',
-      ms: { 3: 'Sisa potongan kayu. Ambil, berguna untukmu.', 5: 'Untukmu harga teman: biaya peningkatan di toko jadi 20% lebih murah, aku yang kerjakan.', 8: 'Kayu dan batu terbaik dari gudangku. Bangun kandang yang hebat.' },
+      ms: { 3: 'Sisa potongan kayu. Ambil, berguna untukmu.', 5: 'Untukmu harga teman: ongkos bangunan jadi 20% lebih murah.', 8: 'Kayu dan batu terbaik dari gudangku. Bangun kandang yang hebat.' },
+      proposeYes: '...Ini... untukku? ...Hmph. Aku tidak pandai bicara. Tapi... iya. Aku mau.',
+      proposeNotYet: '...Bulu biru? Kita belum sedekat itu.',
+      proposeHouse: 'Rumahmu terlalu kecil untuk berdua. Perluas dulu — aku yang kerjakan.',
+      spouse: ['Pagi. Pagar ladang sudah kuperbaiki.', 'Kubuatkan bekal. ...Jangan bilang siapa-siapa.', 'Hati-hati kerja. Pulang sebelum gelap.'],
       ambient: ['*tok tok tok*', 'Hmph.', 'Kayu bagus...'],
       ctx: { stumps: 'Masih ada {n} tunggul di ladangmu. Tebang saja, kayunya lumayan.' },
     },
   },
   lina: {
-    name: 'Lina', role: 'Perangkai Bunga', icon: '🌸', speed: 2.6, home: 'market', color: '#e0783a',
+    name: 'Lina', role: 'Perangkai Bunga', icon: '🌸', speed: 2.6, home: 'market', color: '#e0783a', candidate: true,
     look: { skin: '#ffe0c4', hair: '#d9532b', hairStyle: 'long', hat: 'sunhat', hatColor: '#f6e2b0', shirt: '#fff6df', pants: '#9ad46a', skirt: '#9ad46a', backpack: false, overalls: false },
     birthday: { season: 0, day: 20 },
     loves: ['flower', 'sunflower'], likes: ['bamboo', 'herb', 'cucumber', 'grape', 'berry', 'egg'], dislikes: ['stone', 'lumber', 'fish_s'],
@@ -409,13 +473,227 @@ export const VILLAGERS = {
       request: 'A-aku butuh {qty} {item}... untuk merangkai hadiah. Aku bisa bayar {reward}G...',
       thanks: 'Terima kasih banyak! Kamu baik sekali...',
       ms: { 3: 'Ini bunga dari kebun kecilku. Untukmu.', 5: 'Kalau boleh... aku akan bantu menyiram tanaman di ladangmu setiap pagi.', 8: 'Bunga-bunga terbaikku... semuanya untukmu.' },
+      proposeYes: 'Bulu biru...? I-ini lamaran? ...Iya! Aku mau! Aku mau hidup bersamamu, {name}!',
+      proposeNotYet: 'Bulu biru... a-aku belum siap. Kita belum cukup dekat...',
+      proposeHouse: 'Aku senang sekali... tapi rumahmu masih terlalu kecil untuk kita berdua. Mungkin Mas Joko bisa memperluasnya?',
+      spouse: ['Selamat pagi, sayang. Bunga di ladang kita mekar indah hari ini.', 'Aku sudah menyiapkan bekal untukmu. Jangan terlalu lelah, ya.', 'Pulang cepat, ya... aku menunggumu.'],
       ambient: ['La la la...', 'Bunga cantik...', 'Semoga tumbuh subur...'],
       ctx: { ready: 'Tanaman di ladangmu ada yang sudah siap panen, lho...', other: 'Tadi aku melihat {other} bekerja keras di ladangnya...' },
+    },
+  },
+  danu: {
+    name: 'Mas Danu', role: 'Kurir Ekspedisi', icon: '📦', speed: 4.0, home: 'depot', color: '#d9822b',
+    look: { skin: '#c68a5a', hair: '#2a1d14', hairStyle: 'short', hat: 'cap', hatColor: '#d9822b', shirt: '#f2c94c', pants: '#3a4a6a', scarf: '#d9822b', backpack: true, overalls: false },
+    birthday: { season: 0, day: 25 },
+    loves: ['friedrice', 'corn'], likes: ['milk', 'egg', 'potato', 'tomato', 'soto', 'bread'], dislikes: ['flower', 'herb'],
+    perk: { kind: 'lateShip', text: 'Kiriman yang terlambat tetap dibayar besok pagi' },
+    gifts: { 3: { bread: 3 }, 8: { gem: 1 } },
+    schedule: {
+      // Afternoon round collecting every farm's shipping bin.
+      default: [[0, 'depotIn'], [h(8), 'marketSide'], [h(11), 'depotIn'], [h(15, 30), 'bin2'], [h(15, 50), 'bin3'], [h(16, 20), 'bin1'], [h(17), 'bin0'], [h(17, 30), 'bin4'], [h(18, 5), 'bin5'], [h(18, 35), 'bin6'], [h(19, 5), 'bin7'], [h(19, 35), 'innFront'], [h(21), 'depotIn']],
+    },
+    talk: {
+      intro: 'Halo, Bos! Danu dari Ekspedisi Bloom. Tiap sore aku keliling ladang mengambil isi kotak pengiriman, lalu besok pagi uangnya sampai. Barang yang dimasukkan setelah aku lewat, ikut kiriman besok, ya!',
+      morning: ['Pagi, Bos! Hari ini kiriman banyak?', 'Gerobakku sudah kuminyaki. Siap keliling!'],
+      day: ['Sore nanti aku mampir ke ladangmu, Bos.', 'Barang yang bagus, harganya juga bagus!'],
+      evening: ['Fiuh, semua kotak sudah kuambil. Saatnya makan di kedai!', 'Kalau kotakmu penuh, aku ikut senang!'],
+      night: ['Sudah malam, Bos. Besok sore aku datang lagi.'],
+      rain: ['Hujan bukan halangan buat kurir sejati!'],
+      snow: ['Jalan licin bersalju, tapi kiriman tetap jalan!'],
+      spring: ['Musim semi, kiriman stroberi dan kubis mulai banyak.'],
+      summer: ['Musim panas, jagung dan tomat di mana-mana!'],
+      fall: ['Musim gugur, gerobakku berat sekali isinya labu!'],
+      winter: ['Musim dingin, kebanyakan kiriman susu dan telur.'],
+      h0: ['Isi saja kotak pengirimanmu, sisanya urusanku!'],
+      h3: ['Ladangmu salah satu langgananku yang paling rajin, Bos!'],
+      h6: ['Buatmu, Bos, aku rela keliling dua kali!'],
+      birthday: 'Hari ini ulang tahunku, Bos! Tapi kiriman tetap jalan, haha!',
+      love: ['Wah, Bos! Ini kesukaanku! Tenagaku langsung penuh!'],
+      like: ['Makasih, Bos! Pas buat bekal keliling.'],
+      neutral: ['Oh, buatku? Makasih, Bos.'],
+      dislike: ['Hmm... ini nggak cocok buatku, Bos.'],
+      already: 'Hadiahnya sudah, Bos! Besok saja lagi.',
+      birthdayGift: 'Hadiah ulang tahun? Bos memang paling mantap!',
+      request: 'Ada pesanan dari kota: {qty} {item}. Kalau Bos punya, kubayar {reward}G!',
+      thanks: 'Mantap, Bos! Langsung kukirim ke kota. Ini bayarannya.',
+      ms: { 3: 'Roti bekal kurir. Buat Bos!', 5: 'Buat Bos, aku mampir dua kali. Barang yang telat masuk kotak tetap kubawa!', 8: 'Ini permata titipan pelanggan kota. Katanya buat petani terbaik — ya Bos orangnya!' },
+      ambient: ['Kiriman datang!', 'Permisi, permisi!', 'Kotak berikutnya...'],
+      ctx: { other: 'Tadi aku mengambil kiriman {other}. Banyak sekali isinya!' },
+    },
+  },
+  bejo: {
+    name: 'Pak Bejo', role: 'Pandai Besi', icon: '⚒️', speed: 1.8, home: 'forge', color: '#8a4a2a',
+    look: { skin: '#b07a4a', hair: '#dcdcdc', hairStyle: 'bald', hat: 'none', shirt: '#7a3a2a', pants: '#3a3a42', apron: '#5a3a22', beard: '#dcdcdc', mustache: '#dcdcdc', build: 'stout', hunch: true, backpack: false, overalls: false },
+    birthday: { season: 3, day: 3 },
+    loves: ['gold_ore', 'gem'], likes: ['silver_ore', 'copper_ore', 'milk', 'chestnut', 'mushroom'], dislikes: ['flower', 'strawberry', 'sunflower'],
+    perk: { kind: 'quickForge', text: 'Tempa kilat: alat langsung selesai' },
+    gifts: { 3: { copper_ore: 3 }, 8: { gold_ore: 3 } },
+    schedule: {
+      default: [[0, 'forgeIn'], [h(9, 40), 'forgeCounter'], [h(16), 'benchA'], [h(17, 30), 'forgeIn']],
+      rain: [[0, 'forgeIn'], [h(9, 40), 'forgeCounter'], [h(16), 'forgeIn']],
+    },
+    talk: {
+      intro: 'Hmph. Pandai besi Bejo. Alat yang bagus membuat petani hebat. Bawa bijih logam dan emas — kutempa alatmu jadi lebih kuat. Bijih bisa kau dapat dari batu besar di hutan. Menempa butuh semalam, sabar.',
+      morning: ['Api tungku harus panas sejak pagi.', 'Hmph. Pagi.'],
+      day: ['*TANG! TANG!* ...Ada perlu apa?', 'Cangkul tembaga menggarap tiga petak sekaligus. Emas, sembilan.'],
+      evening: ['Tanganku pegal... tapi besi hari ini bagus.', 'Duduk sebentar di alun-alun. Orang tua butuh angin sore.'],
+      night: ['Tungku sudah padam. Kembali besok.'],
+      rain: ['Hujan tidak memadamkan tungkuku.'],
+      snow: ['Dingin begini, enaknya berdiri di dekat tungku.'],
+      spring: ['Musim semi, banyak petani minta cangkulnya ditempa.'],
+      summer: ['Panas di luar, lebih panas di bengkelku. Hmph.'],
+      fall: ['Musim gugur, waktunya mengasah sabit.'],
+      winter: ['Musim dingin, waktunya memecah batu mencari bijih.'],
+      h0: ['Jangan banyak bicara. Bawa bijih.'],
+      h3: ['Alatmu kau rawat dengan baik. Aku menghargai itu.'],
+      h6: ['Kau seperti cucuku sendiri, Nak.'],
+      birthday: 'Ulang tahun? Hmph. Umur hanyalah angka bagi besi tua sepertiku.',
+      love: ['...! Bijih sebagus ini... Kau tahu nilai logam, Nak.'],
+      like: ['Hmph. Lumayan. Terima kasih.'],
+      neutral: ['Hm.'],
+      dislike: ['Untuk apa ini? Aku pandai besi, bukan tukang kebun.'],
+      already: 'Satu sudah cukup. Hmph.',
+      birthdayGift: '...Kau ingat ulang tahun orang tua ini? ...Terima kasih.',
+      request: 'Aku butuh {qty} {item} untuk pesanan besar. {reward}G kalau kau bisa bawa.',
+      thanks: 'Bagus. Tepat yang kubutuhkan. Ambil bayaranmu.',
+      ms: { 3: 'Bijih tembaga sisa. Cukup untuk satu alat.', 5: 'Untukmu, kutempa langsung jadi. Tidak perlu menunggu semalam.', 8: 'Bijih emas terbaik simpananku. Gunakan dengan bijak.' },
+      ambient: ['*TANG!*', 'Hmph.', 'Besi harus ditempa selagi panas.'],
+      ctx: {},
+    },
+  },
+  jaya: {
+    name: 'Pak Jaya', role: 'Peternak', icon: '🐄', speed: 2.4, home: 'ranch', color: '#a0522d',
+    look: { skin: '#c68a5a', hair: '#3a2418', hairStyle: 'short', hat: 'ranch', hatColor: '#8a5a32', shirt: '#c4553b', pants: '#3a4a6a', mustache: '#3a2418', scarf: '#f2c94c', build: 'stout', backpack: false, overalls: false },
+    birthday: { season: 2, day: 4 },
+    loves: ['premium_milk', 'golden_egg'], likes: ['milk', 'egg', 'carrot', 'corn', 'fodder'], dislikes: ['fish_s', 'shell'],
+    perk: { kind: 'animalLove', text: 'Ternak yang diberi makan +1 kasih sayang ekstra tiap hari' },
+    gifts: { 3: { fodder: 10, chicken_feed: 10 }, 8: { golden_egg: 1, premium_milk: 1 } },
+    schedule: {
+      default: [[0, 'ranchIn'], [h(6, 30), 'ranchPen'], [h(7, 15), 'ranchCounter'], [h(16), 'ranchPen'], [h(18), 'innFront'], [h(20), 'ranchIn']],
+      rain: [[0, 'ranchIn'], [h(7, 20), 'ranchCounter'], [h(16), 'ranchIn']],
+    },
+    talk: {
+      intro: 'Selamat datang di Peternakan Jaya, Dik! Mau beli ayam atau sapi? Pakan juga ada. Ingat: beri makan dan elus ternakmu setiap hari, nanti hasilnya makin bagus!',
+      morning: ['Pagi, Dik! Sapi-sapiku sudah sarapan.', 'Ayam berkokok, peternak harus sudah bangun!'],
+      day: ['Ternak yang disayang itu kelihatan dari matanya, Dik.', 'Rumput pakan bisa didapat dari memotong rumput liar, lho.'],
+      evening: ['Ternak sudah masuk kandang. Waktunya makan di kedai!', 'Hari ini susunya banyak sekali.'],
+      night: ['Sudah malam, Dik. Ternak juga butuh tidur.'],
+      rain: ['Hujan begini ternak lebih baik di kandang.'],
+      snow: ['Musim dingin, jangan lupa beri makan ternak setiap hari!'],
+      spring: ['Musim semi, anak ayam lucu-lucu menetas.'],
+      summer: ['Musim panas, sebentar lagi Lomba Ternak! Siapkan ternak terbaikmu.'],
+      fall: ['Musim gugur, rumput pakan melimpah.'],
+      winter: ['Di musim dingin, ternaklah sumber penghasilan utama.'],
+      h0: ['Kalau ternakmu sakit hati, susunya juga sedikit, haha!'],
+      h3: ['Ternakmu pasti bahagia punya pemilik sepertimu.'],
+      h6: ['Kau peternak sejati, Dik. Aku bangga.'],
+      birthday: 'Hari ini ulang tahunku! Sapi-sapiku juga ikut senang, moooo!',
+      love: ['Wah! Ini hasil ternak kelas juara! Terima kasih, Dik!'],
+      like: ['Terima kasih, Dik. Bagus sekali.'],
+      neutral: ['Oh, terima kasih.'],
+      dislike: ['Hmm... ini bukan seleraku, Dik.'],
+      already: 'Sudah, sudah, satu hari satu hadiah cukup!',
+      birthdayGift: 'Hadiah ulang tahun? Wah, Dik memang baik hati!',
+      request: 'Dik, aku butuh {qty} {item} untuk pelanggan. Kubayar {reward}G!',
+      thanks: 'Mantap! Pelangganku pasti senang. Ini bayarannya, Dik.',
+      ms: { 3: 'Pakan sisa stok, buat ternakmu.', 5: 'Rahasia peternak: ajak ngobrol ternakmu. Mulai sekarang mereka lebih cepat sayang padamu!', 8: 'Hasil terbaik peternakanku. Untukmu, Dik.' },
+      ambient: ['Moooo!', 'Petok petok!', 'Ayo, makan yang banyak!'],
+      ctx: { animal: 'Bagaimana kabar {animal}? Jangan lupa dielus, ya!' },
+    },
+  },
+  ayu: {
+    name: 'Ayu', role: 'Juru Masak Kedai', icon: '🍲', speed: 2.8, home: 'kedai', color: '#e8743e', candidate: true,
+    look: { skin: '#e0ac7e', hair: '#3a2418', hairStyle: 'ponytail', hat: 'bandana', hatColor: '#f2c94c', shirt: '#e8743e', pants: '#6a3a2a', skirt: '#6a3a2a', apron: '#fffaf0', backpack: false, overalls: false },
+    birthday: { season: 1, day: 15 },
+    loves: ['pineapple', 'strawberry', 'soto'], likes: ['tomato', 'onion', 'egg', 'milk', 'fish_m', 'mushroom'], dislikes: ['stone', 'fodder', 'lumber'],
+    perk: { kind: 'mealDiscount', text: 'Diskon 20% di Kedai' },
+    gifts: { 3: { friedrice: 2 }, 8: { soto: 3 } },
+    schedule: {
+      default: [[0, 'innIn'], [h(8, 30), 'storeSide'], [h(10, 20), 'innCounter'], [h(21), 'innIn']],
+      rain: [[0, 'innIn'], [h(10, 40), 'innCounter'], [h(21), 'innIn']],
+    },
+    talk: {
+      intro: 'Hai! Aku Ayu, yang masak di Kedai. Lapar setelah bertani? Mampir saja jam 11:00–21:00 — masakanku dijamin bikin semangat lagi!',
+      morning: ['Pagi! Aku lagi belanja bahan untuk menu hari ini.', 'Sayur segar bikin masakan makin enak!'],
+      day: ['Selamat datang! Mau pesan apa?', 'Soto ayam hari ini spesial, lho!'],
+      evening: ['Malam-malam begini kedai paling ramai!', 'Semua warga suka makan di sini sepulang kerja.'],
+      night: ['Kedai sudah tutup. Besok mampir lagi, ya!'],
+      rain: ['Hujan-hujan begini enaknya makan yang hangat!'],
+      snow: ['Dingin! Semangkuk soto pasti pas sekali.'],
+      spring: ['Musim semi, stroberi segar untuk hidangan penutup!'],
+      summer: ['Musim panas, nanas manis segar! Aku suka sekali.'],
+      fall: ['Musim gugur, jamur hutan bikin sup makin gurih.'],
+      winter: ['Musim dingin, menu andalan: soto panas!'],
+      h0: ['Jangan lupa makan, ya! Petani butuh tenaga.'],
+      h3: ['Kamu langganan favoritku, tahu!'],
+      h6: ['Kalau kamu datang, masakanku rasanya lebih enak... eh, maksudku... ah, sudahlah!'],
+      birthday: 'Hari ini ulang tahunku! Aku masak kue sendiri, haha!',
+      love: ['Waaah! Ini bahan favoritku! Nanti kumasakkan sesuatu yang spesial!'],
+      like: ['Makasih! Ini bisa kumasak jadi enak.'],
+      neutral: ['Oh, makasih, ya.'],
+      dislike: ['Eh... ini nggak bisa dimasak, tahu.'],
+      already: 'Hadiahmu hari ini sudah kuterima. Besok lagi, ya!',
+      birthdayGift: 'Kamu ingat ulang tahunku? Aduh, jadi malu...',
+      request: 'Stok dapurku habis! Butuh {qty} {item}, kubayar {reward}G. Tolong, ya!',
+      thanks: 'Selamat! Dapurku selamat! Ini bayaranmu, terima kasih!',
+      ms: { 3: 'Nasi goreng spesial, gratis untukmu!', 5: 'Untuk langganan setia: diskon 20% di kedaiku!', 8: 'Soto spesial buatanku... hanya untukmu.' },
+      proposeYes: 'Hah?! Bulu biru?! ...Dasar! Tentu saja aku mau! Mulai sekarang aku yang masak untukmu setiap hari!',
+      proposeNotYet: 'Eh? Bulu biru? Haha, kita kan baru kenal. Ngobrol dulu yang banyak!',
+      proposeHouse: 'Aku mau... tapi dapurmu mana? Minta Mas Joko perluas rumahmu dulu, ya!',
+      spouse: ['Pagi! Bekalmu sudah siap, habiskan, ya!', 'Hari ini kumasak menu spesial. Pulang tepat waktu!', 'Kerja yang semangat, sayang!'],
+      ambient: ['Silakan, silakan!', 'Hmm, wangi sekali...', 'Satu soto, siap!'],
+      ctx: { other: 'Tadi {other} makan di kedaiku, lahap sekali!' },
+    },
+  },
+  raka: {
+    name: 'Dokter Raka', role: 'Dokter Desa', icon: '🩺', speed: 2.6, home: 'clinic', color: '#3e8ee8', candidate: true,
+    look: { skin: '#f2c7a0', hair: '#1a1a2a', hairStyle: 'short', hat: 'none', shirt: '#9ad0ff', pants: '#3a3a52', coat: '#fbfbff', glasses: true, backpack: false, overalls: false },
+    birthday: { season: 3, day: 9 },
+    loves: ['herb', 'grape'], likes: ['milk', 'egg', 'cucumber', 'carrot', 'tea'], dislikes: ['friedrice', 'fish_s'],
+    perk: { kind: 'medDiscount', text: 'Diskon 25% obat di Klinik' },
+    gifts: { 3: { jamu: 2 }, 8: { elixir: 2 } },
+    schedule: {
+      default: [[0, 'clinicIn'], [h(7), 'pondSide'], [h(8, 15), 'clinicCounter'], [h(16), 'plazaS'], [h(17, 30), 'innFront'], [h(19), 'clinicIn']],
+      rain: [[0, 'clinicIn'], [h(8, 40), 'clinicCounter'], [h(16), 'clinicIn']],
+    },
+    talk: {
+      intro: 'Selamat datang di Klinik Desa. Saya Raka, dokter di sini. Kalau kelelahan, jangan dipaksakan. Saya punya jamu dan ramuan pemulih tenaga — dan pemeriksaan gratis, tentu saja.',
+      morning: ['Selamat pagi. Sudah sarapan? Itu penting.', 'Jalan pagi di tepi kolam baik untuk jantung.'],
+      day: ['Ada keluhan? Saya siap memeriksa.', 'Jangan bekerja di bawah terik matahari terlalu lama.'],
+      evening: ['Pasien hari ini sudah selesai. Waktunya istirahat.', 'Makan malam yang seimbang, jangan lupa sayur.'],
+      night: ['Sudah larut. Tidur yang cukup adalah obat terbaik.'],
+      rain: ['Hujan begini, jaga badan tetap hangat.'],
+      snow: ['Musim dingin, banyak warga masuk angin. Hati-hati.'],
+      spring: ['Musim semi, herba obat bermunculan di hutan.'],
+      summer: ['Musim panas, minum air yang banyak.'],
+      fall: ['Musim gugur, anggur liar baik untuk kesehatan.'],
+      winter: ['Musim dingin, jangan lupa makan yang hangat.'],
+      h0: ['Kesehatan adalah harta yang paling berharga.'],
+      h3: ['Senang melihatmu sehat, {name}.'],
+      h6: ['Entah kenapa, hari terasa lebih cerah kalau kamu datang ke klinik.'],
+      birthday: 'Hari ini ulang tahun saya. Terima kasih sudah mengingatnya.',
+      love: ['Oh! Ini sangat berguna untuk ramuan. Terima kasih banyak, {name}.'],
+      like: ['Terima kasih. Ini baik untuk kesehatan.'],
+      neutral: ['Terima kasih.'],
+      dislike: ['Hmm... sebagai dokter, saya tidak menyarankan ini.'],
+      already: 'Satu hadiah sehari sudah lebih dari cukup. Terima kasih.',
+      birthdayGift: 'Hadiah ulang tahun... Saya sangat menghargainya.',
+      request: 'Saya butuh {qty} {item} untuk bahan obat. Saya bayar {reward}G.',
+      thanks: 'Terima kasih. Ini akan menyembuhkan banyak warga. Ini bayaranmu.',
+      ms: { 3: 'Jamu kuat buatan saya. Minum kalau kelelahan.', 5: 'Untuk pasien setia: diskon 25% semua obat di klinik.', 8: 'Ramuan ajaib langka. Simpan untuk keadaan darurat.' },
+      proposeYes: 'Bulu biru... Saya tidak menyangka. Dengan senang hati — saya akan menjagamu seumur hidup.',
+      proposeNotYet: 'Bulu biru? Maaf, saya rasa kita perlu lebih saling mengenal dulu.',
+      proposeHouse: 'Saya mau, tapi rumahmu perlu diperluas dulu supaya sehat untuk kita berdua.',
+      spouse: ['Selamat pagi. Jangan lupa sarapan dan minum air yang cukup.', 'Saya siapkan bekal bergizi untukmu hari ini.', 'Kalau lelah, istirahat. Itu resep dokter.'],
+      ambient: ['Jaga kesehatan, ya.', 'Hmm, tekanan udara turun...', 'Sudah minum air hari ini?'],
+      ctx: {},
     },
   },
 };
 
 export const VILLAGER_IDS = Object.keys(VILLAGERS);
+export const CANDIDATES = VILLAGER_IDS.filter((id) => VILLAGERS[id].candidate);
+for (const v of Object.values(VILLAGERS)) v.homeSpot = HOUSES[v.home].spot;
 
 export function isBirthday(id, world) {
   const b = VILLAGERS[id].birthday;
@@ -441,6 +719,54 @@ function scheduleFor(v, weather) {
   if (weather === 'storm' && s.storm) return s.storm;
   if ((weather === 'rain' || weather === 'storm') && s.rain) return s.rain;
   return s.default;
+}
+
+// Festival spot for each villager: the village head hosts, everyone else forms a ring.
+const FEST_SPOT = {};
+VILLAGER_IDS.filter((id) => id !== 'harjo').forEach((id, i) => { FEST_SPOT[id] = `fest${i}`; });
+FEST_SPOT.harjo = 'festHost';
+const FEST_POSE = { dance: 'dance', contest: 'wave', watch: 'idle', pot: 'wave', dinner: 'idle' };
+
+// Everyone gathers at the plaza for the festival, then picks their day back up.
+function withFestival(base, fest, spot) {
+  const t0 = fest.start - FESTIVAL_GATHER, t1 = fest.end;
+  const out = base.filter(([t]) => t < t0);
+  if (!out.length) out.push(base[0]);
+  out.push([t0, spot]);
+  let resume = base[0][1];
+  for (const [t, s] of base) if (t <= t1) resume = s;
+  const rest = base.filter((e) => e[0] > t1);
+  // If the next appointment is soon, head straight there instead.
+  if (rest.length && rest[0][0] - t1 < 45) out.push([t1, rest.shift()[1]]);
+  else out.push([t1, resume]);
+  out.push(...rest);
+  return out;
+}
+
+// A married villager lives at their spouse's farmhouse and spends evenings on the farm.
+function withSpouseHome(base, v, plot) {
+  const home = `plotHome${plot}`;
+  const out = base.map(([t, s]) => [t, s === v.homeSpot ? home : s]);
+  const last = out[out.length - 1];
+  if (out.length > 1 && last[1] === home && last[0] + 90 < DAY_END_MIN) {
+    out.splice(out.length - 1, 1, [last[0], `plotYard${plot}`], [last[0] + 90, home]);
+  }
+  return out;
+}
+
+const schedCache = new Map();
+function scheduleOf(id, weather, dayIdx, homePlot) {
+  const key = `${id}|${weather}|${dayIdx}|${homePlot ?? ''}`;
+  let sched = schedCache.get(key);
+  if (sched) return sched;
+  const v = VILLAGERS[id];
+  sched = scheduleFor(v, weather);
+  if (homePlot !== null && homePlot !== undefined) sched = withSpouseHome(sched, v, homePlot);
+  const fest = festivalOfDay(dayIdx);
+  if (fest) sched = withFestival(sched, fest, FEST_SPOT[id]);
+  if (schedCache.size > 2000) schedCache.clear();
+  schedCache.set(key, sched);
+  return sched;
 }
 
 const routeCache = new Map();
@@ -543,9 +869,9 @@ function idle(spot, x, z, dx, dz) {
  * minute: game minute (360–1560). rate: game minutes per real second.
  * Returns { x, z, y, ry, moving, speed, hidden, pose, spot }.
  */
-export function npcState(id, minute, weather, rate, dayIdx) {
+export function npcState(id, minute, weather, rate, dayIdx, homePlot = null) {
   const v = VILLAGERS[id];
-  const sched = scheduleFor(v, weather);
+  const sched = scheduleOf(id, weather, dayIdx, homePlot);
   let k = 0;
   while (k + 1 < sched.length && sched[k + 1][0] <= minute) k++;
   const [start, spotKey] = sched[k];
@@ -569,10 +895,24 @@ export function npcState(id, minute, weather, rate, dayIdx) {
     if (out.moving) out.speed = v.speed;
   }
   if (!out.moving) out.speed = 0;
+  if (out.pose === 'festival') out.pose = FEST_POSE[festivalOfDay(dayIdx)?.activity] || 'wave';
   out.hidden = !!out.hidden;
   out.y = out.hidden ? 0 : pierHeight(out.x, out.z);
   out.spot = spotKey;
   return out;
+}
+
+// The time a villager stands at a given spot today (e.g. when the courier reaches a farm's bin).
+export function arrivalTime(id, spotKey, weather, rate, dayIdx, homePlot = null) {
+  const v = VILLAGERS[id];
+  const sched = scheduleOf(id, weather, dayIdx, homePlot);
+  for (let k = 1; k < sched.length; k++) {
+    if (sched[k][1] !== spotKey) continue;
+    const end = k + 1 < sched.length ? sched[k + 1][0] : DAY_END_MIN;
+    const len = route(sched[k - 1][1], spotKey).len;
+    return sched[k][0] + Math.min(len * ((rate || 2) / v.speed), Math.max(1, (end - sched[k][0]) * 0.8));
+  }
+  return null;
 }
 
 function wanderState(id, spot, k, t0, tEnd, minute, minPerUnit, dayIdx) {
@@ -626,9 +966,52 @@ export function requestable(itemId, season, ITEMS) {
     case 'forage': return !it.season || it.season === season;
     case 'animal': return itemId === 'egg' || itemId === 'milk';
     case 'fish': return itemId !== 'fish_legend';
-    case 'material': return true;
+    case 'material': case 'ore': return true;
     default: return false;
   }
+}
+
+// ------------------------------------------------------------------ festivals
+
+export const FEST_HOST = {
+  flower: 'Selamat datang di Festival Bunga! Ajak seseorang menari di alun-alun — persahabatan kalian akan bersemi!',
+  livestock: 'Lomba Ternak dimulai! Daftarkan ternak tersayangmu padaku. Juaranya kuumumkan pukul 15:00.',
+  fireworks: 'Malam ini Festival Kembang Api! Tontonlah bersama seseorang yang spesial.',
+  harvest: 'Festival Panen! Masukkan bahan terbaikmu ke kuali besar — seluruh desa akan menikmatinya.',
+  starry: 'Malam Bintang telah tiba. Habiskan malam ini bersama seseorang yang kamu sayangi.',
+};
+export const FEST_TALK = {
+  flower: ['Festival Bunga! Musiknya bikin ingin menari.', 'Lihat bunga-bunga ini, cantik sekali!'],
+  livestock: ['Ternak siapa yang akan juara tahun ini, ya?', 'Semua ternak hari ini bersih dan wangi!'],
+  fireworks: ['Kembang apinya sebentar lagi mulai!', 'Wah, langitnya penuh warna!'],
+  harvest: ['Sup dari kuali besar ini selalu jadi yang terenak!', 'Terima kasih atas panen tahun ini.'],
+  starry: ['Malam Bintang... hangat sekali bersama orang tersayang.', 'Lihat, bintangnya terang sekali!'],
+};
+export const FEST_POINTS = 100;
+
+// --------------------------------------------------------------- the goddess
+
+export const GODDESS = {
+  name: 'Dewi Panen', role: 'Penjaga Mata Air', icon: '✨', color: '#2fae9c',
+  look: { skin: '#fff1e6', hair: '#9ff0dc', hairStyle: 'long', hat: 'crown', hatColor: '#f6a8c8', shirt: '#f4fffb', pants: '#c8f5ea', skirt: '#e6fff8', glow: '#7fe0c8', backpack: false, overalls: false, scale: 1.1 },
+  loves: ['flower', 'sunflower', 'strawberry', 'pineapple', 'golden_egg'],
+  dislikes: ['stone', 'lumber', 'copper_ore', 'silver_ore', 'gold_ore', 'fodder', 'chicken_feed'],
+  talk: {
+    love: ['Indah sekali! Persembahan ini membuat hatiku berbunga.', 'Ah... harum dan indah. Terima kasih, petani yang baik.'],
+    like: ['Terima kasih, wahai petani. Aku menerimanya dengan senang hati.'],
+    neutral: ['Hmm... aku menerimanya.'],
+    dislike: ['...Ini bukan sesuatu yang pantas dipersembahkan, bukan?'],
+    already: 'Aku sudah menerima persembahanmu hari ini. Kembalilah besok.',
+    berry: 'Ketulusanmu menyentuh hatiku. Terimalah Buah Kekuatan ini — semoga tenagamu tak pernah habis.',
+  },
+};
+export const GODDESS_POINTS = { love: 60, like: 30, neutral: 15, dislike: 0 };
+export const GODDESS_BERRIES = [200, 500, 900];
+
+export function goddessReaction(item, ITEMS) {
+  if (GODDESS.loves.includes(item)) return 'love';
+  if (GODDESS.dislikes.includes(item)) return 'dislike';
+  return ['crop', 'forage', 'animal', 'fish'].includes(ITEMS[item]?.type) ? 'like' : 'neutral';
 }
 
 // Fill "{name}"-style placeholders.

@@ -42,12 +42,42 @@ export const TOOLS = [
   { id: 'hand', name: 'Tangan', icon: '✋', key: '7', desc: 'Panen, tanam benih terpilih, ambil barang' },
 ];
 
-export const STAMINA_COST = { hoe: 2, can: 1, sickle: 1, axe: 4, hammer: 4, rod: 3, hand: 0 };
+// Tools are upgraded by the blacksmith with ore, like in the classic games.
+export const UPGRADABLE_TOOLS = ['hoe', 'can', 'sickle', 'axe', 'hammer', 'rod'];
+export const TOOL_LEVELS = [
+  { name: 'Biasa', short: '', color: '#9aa0a6' },
+  { name: 'Tembaga', short: 'Cu', color: '#c77b3a', cost: { gold: 1000, items: { copper_ore: 3 } } },
+  { name: 'Perak', short: 'Ag', color: '#c9d1d9', cost: { gold: 2500, items: { silver_ore: 3 } } },
+  { name: 'Emas', short: 'Au', color: '#f2c94c', cost: { gold: 5000, items: { gold_ore: 3 } } },
+];
+// Stamina per use, by tool level.
+const TOOL_COST = {
+  hoe: [2, 3, 4, 2], can: [1, 2, 3, 1], sickle: [1, 2, 3, 1],
+  axe: [4, 3, 2, 1], hammer: [4, 3, 2, 1], rod: [3, 3, 2, 2],
+};
+export const CAN_CAPACITY = [20, 40, 60, 100];
+export function toolCost(tool, level = 0) {
+  return TOOL_COST[tool] ? TOOL_COST[tool][level] : 0;
+}
+// Hoe, watering can and sickle work on more tiles at higher levels.
+export function toolArea(tool, level = 0) {
+  if (!['hoe', 'can', 'sickle'].includes(tool) || level <= 0) return 'single';
+  return level === 1 ? 'line' : 'square';
+}
+export const TOOL_EFFECT = {
+  hoe: ['1 petak', '3 petak sebaris', '3×3 petak', '3×3 petak, hemat stamina'],
+  can: ['1 petak · 20 air', '3 petak · 40 air', '3×3 petak · 60 air', '3×3 petak · 100 air, hemat stamina'],
+  sickle: ['1 petak', '3 petak sebaris', '3×3 petak', '3×3 petak, hemat stamina'],
+  axe: ['4 stamina', '+1 kayu, 3 stamina', '+2 kayu, 2 stamina', '+3 kayu, 1 stamina'],
+  hammer: ['4 stamina', 'lebih banyak bijih, 3 stamina', 'bijih langka, 2 stamina', 'bijih terbaik, 1 stamina'],
+  rod: ['biasa', 'ikan lebih besar', 'waktu tarik lebih lama', 'peluang ikan legenda'],
+};
 
-export const CAN_LEVELS = [
-  { name: 'Penyiram Biasa', capacity: 20 },
-  { name: 'Penyiram Tembaga', capacity: 40, cost: { gold: 1500, items: { stone: 15 } } },
-  { name: 'Penyiram Emas', capacity: 80, cost: { gold: 4000, items: { stone: 40, lumber: 20 } } },
+// House extensions by the carpenter; a bigger house is needed to marry.
+export const HOUSE_LEVELS = [
+  { name: 'Rumah Kayu', stamina: 0 },
+  { name: 'Rumah + Dapur', stamina: 10, cost: { gold: 3000, items: { lumber: 100 } } },
+  { name: 'Rumah Besar', stamina: 20, cost: { gold: 8000, items: { lumber: 250, stone: 80 } } },
 ];
 
 export const BARN_LEVELS = [
@@ -80,9 +110,9 @@ export const ANIMALS = {
 export const PREMIUM_AFFECTION = 40;
 export const MAX_AFFECTION = 100;
 
-// type: seed | crop | animal | forage | fish | material | feed | food
-// sell: base shipping price (0 = cannot ship). buy: store price (absent = not sold in store).
-// eat: stamina restored when eaten.
+// type: seed | crop | animal | forage | fish | material | ore | feed | food | medicine | special
+// sell: base shipping price (0 = cannot ship). buy: shop price (see SHOPS for who sells it).
+// eat: stamina restored when eaten (999 = fully restored).
 export const ITEMS = {
   egg: { name: 'Telur', icon: '🥚', type: 'animal', sell: 50, eat: 10 },
   golden_egg: { name: 'Telur Emas', icon: '🌟', type: 'animal', sell: 150 },
@@ -104,10 +134,22 @@ export const ITEMS = {
   fish_legend: { name: 'Ikan Legenda', icon: '🦈', type: 'fish', sell: 1500 },
   lumber: { name: 'Kayu', icon: '🪵', type: 'material', sell: 10, buy: 50 },
   stone: { name: 'Batu', icon: '🪨', type: 'material', sell: 10, buy: 60 },
+  copper_ore: { name: 'Bijih Tembaga', icon: '🥉', type: 'ore', sell: 15 },
+  silver_ore: { name: 'Bijih Perak', icon: '🥈', type: 'ore', sell: 30 },
+  gold_ore: { name: 'Bijih Emas', icon: '🥇', type: 'ore', sell: 60 },
   chicken_feed: { name: 'Pakan Ayam', icon: '🌽', type: 'feed', sell: 0, buy: 10 },
   fodder: { name: 'Rumput Pakan', icon: '🌾', type: 'feed', sell: 0, buy: 20 },
   bread: { name: 'Roti', icon: '🍞', type: 'food', sell: 0, buy: 100, eat: 40 },
+  tea: { name: 'Teh Manis', icon: '🍵', type: 'food', sell: 0, buy: 60, eat: 20 },
   onigiri: { name: 'Nasi Kepal', icon: '🍙', type: 'food', sell: 0, buy: 200, eat: 70 },
+  friedrice: { name: 'Nasi Goreng', icon: '🍛', type: 'food', sell: 0, buy: 260, eat: 80 },
+  soto: { name: 'Soto Ayam', icon: '🍜', type: 'food', sell: 0, buy: 400, eat: 120 },
+  bento: { name: 'Bekal Cinta', icon: '🍱', type: 'food', sell: 0, eat: 100 },
+  jamu: { name: 'Jamu Kuat', icon: '🧉', type: 'medicine', sell: 0, buy: 500, eat: 60 },
+  elixir: { name: 'Ramuan Ajaib', icon: '🧪', type: 'medicine', sell: 0, buy: 1200, eat: 999 },
+  blue_feather: { name: 'Bulu Biru', icon: '🪶', type: 'special', sell: 0, buy: 1000, desc: 'Berikan kepada warga yang kamu cintai (10 hati) untuk melamar.' },
+  power_berry: { name: 'Buah Kekuatan', icon: '🍒', type: 'special', sell: 0, desc: 'Hadiah Dewi Panen. Dimakan: stamina maksimal +10 selamanya.' },
+  trophy: { name: 'Piala Ternak', icon: '🏆', type: 'special', sell: 0, desc: 'Juara Lomba Ternak.' },
 };
 
 for (const [id, c] of Object.entries(CROPS)) {
@@ -121,6 +163,19 @@ export const FORAGE_BY_SEASON = {
   fall: ['mushroom', 'grape', 'herb'],
   winter: ['chestnut', 'chestnut', 'gem'],
 };
+
+export const FESTIVALS = [
+  { id: 'flower', season: 0, day: 8, name: 'Festival Bunga', icon: '🌷', start: 10 * 60, end: 18 * 60, activity: 'dance', desc: 'Menari bersama warga pilihanmu di alun-alun.' },
+  { id: 'livestock', season: 1, day: 20, name: 'Lomba Ternak', icon: '🏆', start: 10 * 60, end: 15 * 60, activity: 'contest', desc: 'Daftarkan ternak tersayangmu. Juara diumumkan pukul 15:00.' },
+  { id: 'fireworks', season: 1, day: 24, name: 'Festival Kembang Api', icon: '🎆', start: 18 * 60, end: 22 * 60, activity: 'watch', desc: 'Menonton kembang api bersama warga pilihanmu.' },
+  { id: 'harvest', season: 2, day: 13, name: 'Festival Panen', icon: '🍲', start: 10 * 60, end: 18 * 60, activity: 'pot', desc: 'Sumbangkan bahan ke kuali besar; semua warga ikut menikmati.' },
+  { id: 'starry', season: 3, day: 24, name: 'Malam Bintang', icon: '⭐', start: 18 * 60, end: 22 * 60, activity: 'dinner', desc: 'Makan malam istimewa bersama warga pilihanmu.' },
+];
+export function festivalOf(season, day) {
+  return FESTIVALS.find((f) => f.season === season && f.day === day) || null;
+}
+// Villagers gather a little before a festival starts.
+export const FESTIVAL_GATHER = 40;
 
 export const START_GOLD = 500;
 export const START_ITEMS = { potato_seed: 2, strawberry_seed: 1, bread: 2, chicken_feed: 5 };
@@ -159,20 +214,53 @@ export const TOWN = {
   pier: { x0: 18.3, x1: 19.9, z0: 4.9, z1: 7.1, y: 0.31 },
   // Plaza benches: [x, z, facing].
   benches: [[-4.5, 5.5, Math.PI + 0.6], [4.5, 5.5, Math.PI - 0.6], [-5.5, -3, 1.2], [5.5, -3, -1.2]],
-  // Shop counter where the shopkeeper stands during opening hours.
+  // Shop counters; shopkeepers stand between the counter and their door.
   counter: { x: -9.4, z: -4.4, w: 1.6, d: 0.6 },
+  counters: {
+    ranch: { x: -21.6, z: 6.5, w: 1.6, d: 0.6 },
+    forge: { x: -21.8, z: -17.25, w: 1.6, d: 0.6 },
+    carpenter: { x: -21.9, z: -2.6, w: 1.6, d: 0.6 },
+    kedai: { x: -4.2, z: 11.55, w: 1.6, d: 0.6 },
+    clinic: { x: 7.6, z: 11.55, w: 1.6, d: 0.6 },
+  },
   board: { x: 2.6, z: -12.6 },
-  // Villagers' homes (doors face the main road).
+  // Harvest Goddess' spring in the eastern woods.
+  spring: { x: 50, z: -9, r: 2.2 },
+  // Villagers' homes and workplaces.
   houses: {
     mayor: { x: -14, z: 10.5, w: 6, d: 5, door: 'north' },
     hut: { x: 12.5, z: 12.5, w: 5, d: 4.5, door: 'north' },
     workshop: { x: -24, z: -5.6, w: 6, d: 4, door: 'south' },
+    depot: { x: 25.5, z: -14, w: 7, d: 4.5, door: 'north' },
+    forge: { x: -24, z: -14, w: 6, d: 4.5, door: 'north' },
+    ranch: { x: -24, z: 10, w: 7, d: 5, door: 'north' },
+    kedai: { x: -6.5, z: 14.8, w: 7, d: 4.5, door: 'north' },
+    clinic: { x: 5.8, z: 14.8, w: 6, d: 4.5, door: 'north' },
   },
+  ranchPen: { x0: -27.3, z0: 13.4, x1: -20.7, z1: 17.4 },
 };
 
-export const STORE_HOURS = { open: 8 * 60, close: 18 * 60 };
-export function storeOpen(minute) {
-  return minute >= STORE_HOURS.open && minute < STORE_HOURS.close;
+// Who sells what, where they stand and when they are open (closed during festivals).
+export const SHOPS = {
+  store: { name: 'Toko Kelontong', icon: '🏪', npc: 'darto', open: 8 * 60, close: 18 * 60, at: { x: -9.4, z: -5.3 }, door: { x: -12, z: -5.2 }, items: ['bread', 'blue_feather'], seeds: true },
+  ranch: { name: 'Peternakan Jaya', icon: '🐄', npc: 'jaya', open: 8 * 60, close: 16 * 60, at: { x: -21.6, z: 7.15 }, door: { x: -24, z: 7.1 }, items: ['chicken_feed', 'fodder'], animals: true },
+  carpenter: { name: 'Bengkel Kayu', icon: '🪚', npc: 'joko', open: 9 * 60, close: 16 * 60, at: { x: -21.9, z: -3.25 }, door: { x: -24, z: -3.2 }, items: ['lumber', 'stone'], build: true },
+  forge: { name: 'Pandai Besi', icon: '⚒️', npc: 'bejo', open: 10 * 60, close: 16 * 60, at: { x: -21.8, z: -16.6 }, door: { x: -24, z: -16.6 }, forge: true },
+  kedai: { name: 'Kedai Ayu', icon: '🍲', npc: 'ayu', open: 11 * 60, close: 21 * 60, at: { x: -4.2, z: 12.2 }, door: { x: -6.5, z: 12.15 }, items: ['tea', 'onigiri', 'friedrice', 'soto'] },
+  clinic: { name: 'Klinik Desa', icon: '🏥', npc: 'raka', open: 9 * 60, close: 16 * 60, at: { x: 7.6, z: 12.2 }, door: { x: 5.8, z: 12.15 }, items: ['jamu', 'elixir'], checkup: true },
+};
+
+export function shopOpen(shopId, minute, festival = null) {
+  const s = SHOPS[shopId];
+  if (!s || minute < s.open || minute >= s.close) return false;
+  // Everyone goes to the festival, so shops close while it runs.
+  if (festival && minute >= festival.start - FESTIVAL_GATHER && minute < festival.end) return false;
+  return true;
+}
+
+export function shopHours(shopId) {
+  const s = SHOPS[shopId];
+  return `${formatTime(s.open)}–${formatTime(s.close)}`;
 }
 
 export const WILD_ZONES = [
@@ -192,6 +280,7 @@ export function mulberry32(seed) {
 }
 
 // Deterministic trees in the wild zones so server and client agree on positions.
+// The clearing around the goddess' spring is kept free.
 export const WILD_TREES = (() => {
   const rnd = mulberry32(1337);
   const out = [];
@@ -204,6 +293,7 @@ export const WILD_TREES = (() => {
       const zz = z.z0 + rnd() * (z.z1 - z.z0);
       if (Math.hypot(x - TOWN.pond.x, zz - TOWN.pond.z) < TOWN.pond.r + 3) continue;
       if (Math.abs(zz) < 2.5) continue; // keep the main road clear
+      if (Math.hypot(x - TOWN.spring.x, zz - TOWN.spring.z) < TOWN.spring.r + 3.5) continue;
       if (out.some((t) => Math.hypot(t.x - x, t.z - zz) < 3.2)) continue;
       out.push({ x, z: zz, s: 0.8 + rnd() * 0.6, kind: rnd() < 0.35 ? 'pine' : 'round' });
       count++;
@@ -227,6 +317,8 @@ export function colliders() {
   box(TOWN.market);
   for (const hse of Object.values(TOWN.houses)) box(hse);
   box(TOWN.counter);
+  for (const c of Object.values(TOWN.counters)) box(c);
+  circles.push({ x: TOWN.spring.x, z: TOWN.spring.z, r: TOWN.spring.r - 0.3 });
   boxes.push({ x0: TOWN.board.x - 0.25, z0: TOWN.board.z - 0.95, x1: TOWN.board.x + 0.25, z1: TOWN.board.z + 0.95 });
   circles.push({ x: TOWN.fountain.x, z: TOWN.fountain.z, r: TOWN.fountain.r });
   circles.push({ x: TOWN.pond.x, z: TOWN.pond.z, r: TOWN.pond.r - 0.4 });
@@ -263,6 +355,10 @@ export function resolveCollision(x, z, col, radius = 0.35) {
 export function groundHeight(x, z) {
   const P = TOWN.pier;
   return x >= P.x0 && x <= P.x1 && z >= P.z0 && z <= P.z1 ? P.y : 0;
+}
+
+export function nearSpring(x, z, extra = 1.6) {
+  return Math.hypot(x - TOWN.spring.x, z - TOWN.spring.z) < TOWN.spring.r + extra;
 }
 
 export function nearWater(x, z, extra = 1.8) {
