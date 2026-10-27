@@ -1,0 +1,27 @@
+services:
+  barterbloom:
+    build: .
+    image: barterbloom:latest
+    container_name: barterbloom
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+    volumes:
+      - barterbloom-data:/data
+    ports:
+      - "127.0.0.1:7474:3000"   # hanya untuk uji lokal; NPM lewat evertwo-network
+    networks:
+      - evertwo-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  barterbloom-data:
+
+networks:
+  evertwo-network:
+    external: true
