@@ -59,4 +59,16 @@ export function weatherFor(date, worldSeed = 1) {
   return 'snow';
 }
 
-export const FIXED_SUNNY = new Set();
+// Kalender festival (dipakai juga oleh jadwal warga & toko). Hari festival selalu cerah.
+export const FESTIVAL_DAYS = {
+  flower:    { season: 0, day: 8,  name: 'Festival Bunga',     icon: '🌷', from: 9 * 60,  to: 17 * 60 },
+  cooking:   { season: 0, day: 17, name: 'Kontes Memasak',     icon: '🍳', from: 9 * 60,  to: 17 * 60 },
+  livestock: { season: 1, day: 20, name: 'Lomba Ternak',       icon: '🐄', from: 9 * 60,  to: 17 * 60 },
+  fireworks: { season: 1, day: 24, name: 'Kembang Api',        icon: '🎆', from: 17 * 60, to: 21 * 60 },
+  harvest:   { season: 2, day: 13, name: 'Festival Panen',     icon: '🎃', from: 9 * 60,  to: 17 * 60 },
+  stars:     { season: 3, day: 24, name: 'Malam Bintang',      icon: '⭐', from: 18 * 60, to: 22 * 60 },
+  newyear:   { season: 3, day: 30, name: 'Malam Tahun Baru',   icon: '🎍', from: 20 * 60, to: 24 * 60 },
+};
+export const festivalOn = (date) => Object.entries(FESTIVAL_DAYS).find(([, f]) => f.season === date.season && f.day === date.day)?.[0] ?? null;
+
+export const FIXED_SUNNY = new Set(Object.values(FESTIVAL_DAYS).map((f) => `${f.season}:${f.day}`));

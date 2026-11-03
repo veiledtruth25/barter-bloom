@@ -42,3 +42,9 @@ kbd { background: #fff; border: 2px solid var(--line); border-radius: 6px; paddi
 .modal .row { display: flex; justify-content: space-between; gap: 18px; width: 100%; font: inherit; text-align: left; background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 7px 12px; margin-top: 6px; cursor: pointer; color: var(--ink); }
 .modal .row:hover:not(:disabled) { background: #fff1c9; } .modal .row:disabled { opacity: .55; cursor: default; }
 .modal .row.close { justify-content: center; background: #f1dcb3; }
+
+#dialog { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); width: min(640px, 94vw); background: var(--card); border: 3px solid var(--line); border-radius: 18px; box-shadow: 0 5px 0 var(--line); padding: 16px 20px 12px; z-index: 6; }
+#dialog .who { display: inline-block; background: var(--accent); color: #fff; border: 3px solid var(--line); border-radius: 10px; padding: 0 12px; font-weight: 700; margin: -34px 0 8px; }
+#dialog .text { font-size: 18px; line-height: 1.4; margin-bottom: 10px; }
+#dialog .row { display: block; width: 100%; font: inherit; text-align: left; background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 7px 12px; margin-top: 6px; cursor: pointer; color: var(--ink); }
+#dialog .row:hover { background: #fff1c9; }

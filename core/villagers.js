@@ -1,4 +1,4 @@
-import { dayIndex } from './calendar.js';
+import { dayIndex, festivalOn, FESTIVAL_DAYS } from './calendar.js';
 import { ITEMS } from './items.js';
 
 // Tingkat hati ala HM:BTN: ungu → biru → hijau → kuning → merah (0..255 poin).
@@ -20,6 +20,7 @@ export const SHOPS = {
 
 export function isShopOpen(g, shopId) {
   const s = SHOPS[shopId];
+  if (festivalOn(g.date)) return false;     // semua toko tutup di hari festival
   return !s.closed.includes(dayIndex(g.date) % 7) && g.minute >= s.open && g.minute < s.close;
 }
 
@@ -68,6 +69,8 @@ void PLAZA_DAILY;
 export function locationOf(id, g) {
   const v = VILLAGERS[id], wd = dayIndex(g.date) % 7, t = g.minute;
   const rain = g.weather === 'rain' || g.weather === 'storm' || g.weather === 'snow';
+  const fest = festivalOn(g.date);
+  if (fest && t >= FESTIVAL_DAYS[fest].from - 30 && t < FESTIVAL_DAYS[fest].to) return 'plaza';   // semua warga berkumpul
   if (v.shop) {
     const s = SHOPS[v.shop];
     if (!s.closed.includes(wd) && t >= s.open && t < s.close) return v.shop;
@@ -114,4 +117,4 @@ export function gift(g, id, item, { removeItem }) {
 }
 
 export const hearts = (g, id) => heartLevel(pts(g, id));
-export { pts as friendship };
+export { pts as friendship, add as addFriendship };

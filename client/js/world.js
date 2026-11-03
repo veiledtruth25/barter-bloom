@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mesh, G } from './toon.js';
 import { makeTree, makeHouse, makeFence, makeBin, makeBarn, makeBuilding, makeLabel, fadeBuilding } from './models.js';
 import { FIELD, MINE } from '/core/farm.js';
+import { festivalOn } from '/core/calendar.js';
 
 export { FIELD };
 export const SPAWN = new THREE.Vector3(0, 0, 5);
@@ -98,6 +99,7 @@ export class World {
     const plaza = mesh(G.cyl(8, 8, 0.06), 0xe3d3a8, { outline: false, shadow: false }); plaza.position.set(0, 0.03, 33); scene.add(plaza);
     const well = mesh(G.cyl(0.9, 0.9, 0.7), 0xa7a7b2); well.position.set(0, 0.35, 33); scene.add(well);
     this.colliders.push({ x: 0, z: 33, r: 1 });
+    this.bunting = this._makeBunting(); scene.add(this.bunting);
     this.rain = this._makeRain(); scene.add(this.rain);
     this.setSeason(0);
   }
@@ -111,6 +113,22 @@ export class World {
       const t = makeTree(season, () => ((i * 9301 + 49297) % 233280) / 233280);
       t.position.set(x, 0, z); t.scale.setScalar(0.9 + (i % 5) * 0.08); this.trees.add(t);
     });
+  }
+
+  // Umbul-umbul & lampion di alun-alun, tampil hanya pada hari festival.
+  _makeBunting() {
+    const g = new THREE.Group(); g.visible = false;
+    const posts = [[-8, 25], [8, 25], [8, 41], [-8, 41]];
+    for (const [x, z] of posts) { const p = mesh(G.cyl(0.12, 0.14, 5), 0x8a5a33); p.position.set(x, 2.5, z); g.add(p); }
+    const cols = [0xe8452c, 0xf2c94c, 0x4aa3df, 0x5fcf4a, 0xd96aa8];
+    for (let e = 0; e < 4; e++) {
+      const [x1, z1] = posts[e], [x2, z2] = posts[(e + 1) % 4];
+      for (let i = 1; i < 9; i++) {
+        const t = i / 9, flag = mesh(G.cone(0.28, 0.6), cols[(i + e) % cols.length], { thin: true });
+        flag.rotation.x = Math.PI; flag.position.set(x1 + (x2 - x1) * t, 4.7 - Math.sin(t * Math.PI) * 0.5, z1 + (z2 - z1) * t); g.add(flag);
+      }
+    }
+    return g;
   }
 
   _makeRain() {
@@ -133,6 +151,7 @@ export class World {
 
   update(dt, g, focus) {
     if (this.season !== g.date.season) this.setSeason(g.date.season);
+    this.bunting.visible = !!festivalOn(g.date);
     const t = (g.minute - 360) / (20 * 60);          // 0 pagi .. 1 lewat tengah malam
     const sunAng = Math.min(1, Math.max(0, (g.minute - 360) / (12 * 60))) * Math.PI;
     const night = g.minute > 18 * 60 + 30 || g.minute < 5 * 60;

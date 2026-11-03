@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END } from '/core/calendar.js';
+import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END, FESTIVAL_DAYS, festivalOn } from '/core/calendar.js';
 import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '/core/items.js';
 import {
   newGame, advanceMinutes, sleep, fatigue, useTool, harvest, tileKey, serialize, deserialize, eat, ship, feedAnimals, collectProducts,
-  cook, buy, countItem, addItem, gift, orderUpgrade,
+  cook, buy, countItem, addItem, gift, orderUpgrade, startEvent, advanceEvent, festivalActive, eligibleHeartEvent,
 } from '/core/state.js';
 import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '/core/farm.js';
 import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship } from '/core/villagers.js';
 import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, makeAnimal, makeLabel } from './models.js';
 import { World, SPAWN, DOOR, SPOTS, BUILDINGS, PLACES, doorOf } from './world.js';
 import { mesh, G } from './toon.js';
+import { Fireworks } from './fx.js';
 
 const $ = (id) => document.getElementById(id);
 const SAVE_KEYS = ['bb-save-1', 'bb-save-2', 'bb-save-3'];
@@ -36,6 +37,8 @@ const marker = mesh(G.box(1, 0.06, 1, 0.03), 0xfff08a, { outline: false, shadow:
 marker.material = marker.material.clone(); marker.material.transparent = true; marker.material.opacity = 0.6;
 scene.add(marker);
 
+const fireworks = new Fireworks(scene);
+let eventRun = null, eventResolve = null;
 const actors = new Map();
 for (const [id, v] of Object.entries(VILLAGERS)) {
   const m = makeFarmer({ skin: v.skin, hair: v.hair, shirt: v.shirt, pants: v.pants, hat: v.hair });
@@ -60,7 +63,8 @@ function hud() {
   $('clockText').textContent = formatClock(g.minute);
   $('seasonIcon').textContent = SEASON_ICON[g.date.season];
   $('weatherText').textContent = `${WEATHER_ICON[g.weather]} ${WEATHER_NAME[g.weather]}`;
-  $('forecastText').textContent = `TV: besok ${WEATHER_ICON[g.forecast]} ${WEATHER_NAME[g.forecast]}`;
+  const fid = festivalOn(g.date), fest = fid && FESTIVAL_DAYS[fid];
+  $('forecastText').textContent = fest ? `${fest.icon} ${fest.name} ${formatClock(fest.from)}–${formatClock(fest.to)}` : `TV: besok ${WEATHER_ICON[g.forecast]} ${WEATHER_NAME[g.forecast]}`;
   $('goldText').textContent = `${g.gold} G`;
   $('staminaBar').style.width = `${(g.stamina / g.maxStamina) * 100}%`;
   $('faceIcon').textContent = FACE[fatigue(g)];
@@ -95,6 +99,52 @@ function showModal(title, rows, note = '') {
   const c = document.createElement('button'); c.className = 'row close'; c.textContent = 'Tutup (Esc)'; c.onclick = closeModal; m.appendChild(c);
 }
 function closeModal() { modalOpen = false; $('modal').classList.add('hidden'); }
+
+// ---- event: kotak dialog bergaya visual novel
+const dlg = () => $('dialog');
+function showNode(node) {
+  return new Promise((resolve) => {
+    const d = dlg(); d.classList.remove('hidden'); d.innerHTML = '';
+    if (node.who) { const w = document.createElement('div'); w.className = 'who'; w.textContent = node.who; d.appendChild(w); }
+    const t = document.createElement('div'); t.className = 'text'; t.textContent = node.text || node.prompt || ''; d.appendChild(t);
+    const done = (v) => { eventResolve = null; resolve(v); };
+    const btn = (label, v) => { const b = document.createElement('button'); b.className = 'row'; b.textContent = label; b.onclick = () => done(v); d.appendChild(b); };
+    if (node.type === 'say' || node.type === 'end') { btn('▶ Lanjut (Spasi)', null); eventResolve = () => done(null); }
+    else if (node.type === 'choice') node.options.forEach((o, i) => btn(o, i));
+    else if (node.type === 'person') node.ids.forEach((id) => btn(`${VILLAGERS[id].name}${VILLAGERS[id].bachelorette ? ' ♥' : ''}`, id));
+    else if (node.type === 'item') { node.items.forEach((id) => btn(`${ITEMS[id].icon} ${ITEMS[id].name} ×${countItem(game, id)}`, id)); btn('Batal', null); }
+    else if (node.type === 'animal') node.options.forEach((o) => btn(o.label, o.i));
+  });
+}
+
+async function playEvent(run) {
+  if (!run) return;
+  busy = true; modalOpen = true; eventRun = run; closeModal(); modalOpen = true;
+  $('fade').classList.add('on'); $('fadeText').textContent = run.kind === 'festival' ? `${FESTIVAL_DAYS[run.id].icon} ${FESTIVAL_DAYS[run.id].name}` : '💭';
+  await new Promise((r) => setTimeout(r, 900));
+  if (run.kind === 'festival') farmer.position.set(0, 0, 36);
+  $('fade').classList.remove('on');
+  let node = advanceEvent(run);
+  while (node.type !== 'end') { const ans = await showNode(node); node = advanceEvent(run, ans); renderRucksack(); hud(); }
+  await showNode({ type: 'say', who: '', text: node.text });
+  dlg().classList.add('hidden');
+  eventRun = null; modalOpen = false; busy = false;
+  for (const m of actors.values()) m.userData.place = null;
+  hud(); save();
+  if (game.minute >= DAY_END) toast('Sudah malam… sebaiknya tidur.');
+}
+
+function checkEventTriggers() {
+  if (busy || modalOpen || !game) return;
+  const p = farmer.position;
+  const fest = festivalActive(game);
+  if (fest && p.distanceTo(PLACES.plaza) < 9) return playEvent(startEvent(game, 'festival', fest));
+  for (const place of Object.keys(PLACES)) {
+    if (place.startsWith('home') || p.distanceTo(PLACES[place]) > 3.8) continue;
+    const id = eligibleHeartEvent(game, place);
+    if (id) return playEvent(startEvent(game, 'heart', id));
+  }
+}
 
 function menu() {
   $('menu').classList.remove('hidden'); $('hud').classList.add('hidden');
@@ -356,6 +406,8 @@ addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase(); keys.add(k);
   if (!game) return;
+  if (eventResolve && (k === ' ' || k === 'e' || k === 'enter')) { e.preventDefault(); return eventResolve(); }
+  if (eventRun) return;
   if (k === 'escape') { if (modalOpen) return closeModal(); save(); toggleRucksack(false); return menu(); }
   if (k === ' ') { e.preventDefault(); action(); }
   else if (k === 'e') interact();
@@ -415,6 +467,8 @@ function frame() {
     world.update(dt, game, farmer.position);
     updateFishing(dt);
     world.cutaway(farmer.position, cam.yaw);
+    checkEventTriggers();
+    fireworks.update(dt, eventRun?.id === 'fireworks', 0, 33);
     updateActors(dt);
     for (const m of animalMeshes) { m.userData.t += dt; m.position.x = m.userData.home.x + Math.sin(m.userData.t * 0.5) * 0.6; m.rotation.y = Math.cos(m.userData.t * 0.5); m.position.y = Math.abs(Math.sin(m.userData.t * 3)) * 0.04; }
     const t = targetTile(), tk = tileKey(t.x, t.z);

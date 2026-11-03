@@ -2,10 +2,12 @@ import { DAY_START, DAY_END, PASS_OUT, nextDate, weatherFor, weekday } from './c
 import { ITEMS } from './items.js';
 import * as farm from './farm.js';
 import * as vil from './villagers.js';
+import * as ev from './events.js';
+import { CROPS } from './items.js';
 
 export { tileKey } from './farm.js';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const RUCKSACK_SLOTS = 9;
 export const MAX_STAMINA = 100;
 export const STACK = 9;
@@ -116,6 +118,15 @@ export const cook = (g, id) => farm.cook(g, id, bag);
 export const buy = (g, id, n = 1) => farm.buy(g, id, n, bag);
 export const orderUpgrade = (g, tool) => farm.orderUpgrade(g, tool, bag);
 export const gift = (g, id, item) => vil.gift(g, id, item, bag);
+
+// ---- event & festival (mesin di events.js) -----------------------------------
+const evBag = {
+  addItem, removeItem,
+  dishes: (g) => [...new Set(g.rucksack.filter((s) => s && s.id.startsWith('dish_')).map((s) => s.id))],
+  crops: (g) => [...new Set(g.rucksack.filter((s) => s && CROPS[s.id]).map((s) => s.id))],
+};
+export const startEvent = (g, kind, id) => ev.startEvent(g, kind, id, evBag);
+export { advance as advanceEvent, festivalActive, eligibleHeartEvent } from './events.js';
 
 // ---- simpan ----------------------------------------------------------------
 export function serialize(g) {

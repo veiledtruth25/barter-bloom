@@ -261,3 +261,112 @@ test('toko menjual barang berharga; semua barang beli punya harga', () => {
   const g = newGame('A', 1);
   assert.equal(buy(g, 'meal_soup', 1), 'ok'); assert.equal(g.gold, 150);
 });
+
+// ---------------------------------------------------------------- tahap 4
+import { startEvent, advanceEvent, festivalActive, eligibleHeartEvent } from '../core/state.js';
+import { FESTIVAL_DAYS, festivalOn } from '../core/calendar.js';
+import { festivalIds, HEART_EVENT_IDS } from '../core/events.js';
+
+// Jalankan event sampai selesai dengan jawaban dari `answers(node)`; kembalikan semua node.
+function play(run, answers = () => 0) {
+  const nodes = []; let node = advanceEvent(run);
+  for (let i = 0; i < 60 && node.type !== 'end'; i++) { nodes.push(node); node = advanceEvent(run, answers(node)); }
+  nodes.push(node); return nodes;
+}
+
+test('kalender festival: 7 festival, selalu cerah, toko tutup, warga ke alun-alun', () => {
+  assert.equal(Object.keys(FESTIVAL_DAYS).length, 7);
+  assert.deepEqual(festivalIds().sort(), Object.keys(FESTIVAL_DAYS).sort());
+  for (const [id, f] of Object.entries(FESTIVAL_DAYS)) {
+    for (let seed = 1; seed < 6; seed++) assert.equal(weatherFor({ year: 1, season: f.season, day: f.day }, seed), 'sunny', id);
+    const g = newGame('A', 1); at(g, f.season, f.day, f.from + 5);
+    assert.equal(festivalOn(g.date), id);
+    for (const s of Object.keys(SHOPS)) assert.ok(!isShopOpen(g, s));
+    for (const v of Object.keys(VILLAGERS)) assert.equal(locationOf(v, g), 'plaza');
+    assert.equal(festivalActive(g), id);
+    at(g, f.season, f.day, f.from - 60); assert.equal(festivalActive(g), null, 'belum mulai');
+    at(g, f.season, f.day, f.to); assert.equal(festivalActive(g), null, 'sudah usai');
+  }
+  const g = at(newGame('A', 1), 0, 9, 12 * 60); assert.equal(festivalActive(g), null);
+});
+
+test('festival bunga: menari menambah hati, sekali setahun, waktu lompat ke akhir acara', () => {
+  const g = at(newGame('A', 1), 0, 8, 9 * 60 + 10);
+  const nodes = play(startEvent(g, 'festival', 'flower'), (n) => (n.type === 'person' ? 'ayu' : 0));
+  assert.equal(nodes.at(-1).type, 'end'); assert.equal(friendship(g, 'ayu'), 20);
+  assert.equal(g.minute, 17 * 60);
+  assert.equal(startEvent(g, 'festival', 'flower'), null);
+  assert.equal(festivalActive(g), null);
+  const g2 = at(g, 0, 8, 10 * 60); g2.date.year = 2; assert.equal(festivalActive(g2), 'flower', 'tahun depan lagi');
+});
+
+test('kontes memasak: tanpa masakan jadi penonton; dengan masakan dapat hadiah; masakan terpakai', () => {
+  let g = at(newGame('A', 1), 0, 17, 10 * 60); g.gold = 0;
+  assert.match(play(startEvent(g, 'festival', 'cooking')).at(-1).text, /penonton/);
+  g = at(newGame('A', 1), 0, 17, 10 * 60); g.gold = 0; addItem(g, 'dish_porridge', 1);
+  const nodes = play(startEvent(g, 'festival', 'cooking'), (n) => (n.type === 'item' ? n.items[0] : 0));
+  assert.equal(countItem(g, 'dish_porridge'), 0); assert.ok(g.gold >= 150);
+  assert.match(nodes.at(-1).text, /Peringkat \d/);
+});
+
+test('lomba ternak: hewan disayang menang, hewan baru dapat hiburan, tanpa hewan tidak ikut', () => {
+  let g = at(newGame('A', 1), 1, 20, 10 * 60); g.gold = 0;
+  assert.match(play(startEvent(g, 'festival', 'livestock')).at(-1).text, /tidak punya/);
+  g = at(newGame('A', 1), 1, 20, 10 * 60); g.gold = 0; g.animals.push({ type: 'cow', fed: true, petted: false, love: 9, product: 0 });
+  play(startEvent(g, 'festival', 'livestock'), () => 0); assert.equal(g.gold, 2000);
+  g = at(newGame('A', 1), 1, 20, 10 * 60); g.gold = 0; g.animals.push({ type: 'cow', fed: false, petted: false, love: 1, product: 0 });
+  play(startEvent(g, 'festival', 'livestock'), () => 0); assert.equal(g.gold, 300);
+});
+
+test('festival panen: nilai bahan menentukan hadiah, semua warga dapat poin', () => {
+  const g = at(newGame('A', 1), 2, 13, 10 * 60); g.gold = 0; addItem(g, 'cabbage', 2); addItem(g, 'carrot', 1);
+  const nodes = play(startEvent(g, 'festival', 'harvest'), (n) => (n.type === 'item' ? n.items[0] : 0));
+  assert.equal(g.gold, 1500); assert.equal(friendship(g, 'dewi'), 3);
+  assert.equal(countItem(g, 'cabbage') + countItem(g, 'carrot'), 0);
+  assert.equal(nodes.filter((n) => n.type === 'item').length, 3);
+  const h = at(newGame('A', 1), 2, 13, 10 * 60); h.gold = 0;
+  play(startEvent(h, 'festival', 'harvest')); assert.equal(h.gold, 300);
+});
+
+test('kembang api, malam bintang, tahun baru', () => {
+  let g = at(newGame('A', 1), 1, 24, 18 * 60);
+  play(startEvent(g, 'festival', 'fireworks'), (n) => (n.type === 'person' ? 'lina' : 0)); assert.equal(friendship(g, 'lina'), 20);
+  g = at(newGame('A', 1), 3, 24, 19 * 60);
+  play(startEvent(g, 'festival', 'stars'), (n) => (n.type === 'person' ? 'dewi' : 0)); assert.equal(friendship(g, 'dewi'), 15);
+  g = at(newGame('A', 1), 3, 30, 21 * 60); g.gold = 0; play(startEvent(g, 'festival', 'newyear')); assert.equal(g.gold, 100);
+});
+
+test('heart event: syarat hati, tempat, jam, hari; sekali saja; pilihan memengaruhi poin', () => {
+  const g = at(newGame('A', 1), 0, 1, 12 * 60);             // Senin 12:00, kedai buka, Ayu di kedai? (tutup Rabu)
+  assert.equal(eligibleHeartEvent(g, 'inn'), null, 'hati belum cukup');
+  g.friend.ayu = 60;
+  assert.equal(locationOf('ayu', g), 'inn');
+  assert.equal(eligibleHeartEvent(g, 'inn'), 'ayu_1');
+  assert.equal(eligibleHeartEvent(g, 'plaza'), null, 'tempat salah');
+  at(g, 0, 1, 8 * 60); assert.equal(eligibleHeartEvent(g, 'inn'), null, 'jam salah');
+  at(g, 0, 3, 12 * 60); assert.equal(eligibleHeartEvent(g, 'inn'), null, 'kedai tutup hari Rabu');
+  at(g, 0, 8, 12 * 60); assert.equal(eligibleHeartEvent(g, 'inn'), null, 'hari festival');
+  at(g, 0, 1, 12 * 60);
+  play(startEvent(g, 'heart', 'ayu_1'), (n) => (n.type === 'choice' ? 1 : 0));   // jujur: +12
+  assert.equal(friendship(g, 'ayu'), 72);
+  assert.equal(eligibleHeartEvent(g, 'inn'), null, 'tidak terulang');
+  assert.equal(startEvent(g, 'heart', 'ayu_1'), null);
+  g.friend.ayu = 120; assert.equal(eligibleHeartEvent(g, 'inn'), 'ayu_2');
+});
+
+test('heart event: setiap event bisa dimainkan dengan semua pilihan sampai selesai', () => {
+  assert.ok(HEART_EVENT_IDS.length >= 8);
+  for (const id of HEART_EVENT_IDS) for (const choice of [0, 1, 2]) {
+    const g = newGame('A', 1); g.friend = Object.fromEntries(Object.keys(VILLAGERS).map((v) => [v, 100]));
+    const nodes = play(startEvent(g, 'heart', id), (n) => (n.type === 'choice' ? choice : 0));
+    assert.equal(nodes.at(-1).type, 'end', id); assert.ok(nodes.at(-1).text.length > 3, id);
+    for (const v of Object.keys(VILLAGERS)) assert.ok(friendship(g, v) >= 0 && friendship(g, v) <= 255);
+  }
+  const g = newGame('A', 1); play(startEvent(g, 'heart', 'bejo_1'), (n) => (n.type === 'choice' ? 0 : 0)); assert.equal(countItem(g, 'copper'), 1);
+  const h = newGame('A', 1); play(startEvent(h, 'heart', 'harjo_1')); assert.equal(countItem(h, 'herb'), 2);
+});
+
+test('save menyimpan event yang sudah selesai', () => {
+  const g = at(newGame('A', 1), 0, 8, 10 * 60); play(startEvent(g, 'festival', 'flower'), (n) => (n.type === 'person' ? 'ayu' : 0));
+  const h = deserialize(serialize(g)); assert.equal(startEvent(h, 'festival', 'flower'), null);
+});

@@ -31,7 +31,7 @@ Docker: `docker compose up -d --build` (container `barterbloom`, port internal 3
 - [x] **Tahap 1** — inti single player: kalender 4×30 hari (Senin–Minggu), cuaca + ramalan TV, stamina & kelelahan, rucksack 9 slot, save 3 slot, kamera sudut tetap, render toon/outline, cangkul & penyiram.
 - [x] **Tahap 2** — 9 tanaman 3 musim (layu saat musim berganti, tanaman berulang), gulma/batu/tunggul dengan alat yang tepat, kotak pengiriman (dibayar besok), warung benih, ayam & sapi (pakan, elus, telur/susu), tambang (batu & bijih tembaga muncul ulang tiap hari), memancing (lempar → tunggu ❗ → Spasi), memasak di dapur rumah
 - [x] **Tahap 3** — kota (jalan, alun-alun, sumur, 5 toko, 6 rumah), 8 warga dengan jadwal harian (toko buka/tutup per jam & hari, hujan = di rumah), ngobrol & hadiah sekali sehari, selera hadiah, tingkat hati ungu→merah, pandai besi (tingkatkan alat dengan bijih tembaga), toko benih/bunga/klinik/kedai, cutaway bangunan
-- [ ] Tahap 4 — mesin event, festival, heart event
+- [x] **Tahap 4** — mesin event berbasis generator (`core/events.js`, dites tanpa browser), 7 festival (Bunga, Memasak, Ternak, Kembang Api, Panen, Malam Bintang, Tahun Baru: cerah, toko tutup, warga ke alun-alun, dekorasi & kembang api), 8 heart event berpilihan dengan syarat hati/tempat/jam/hari, dialog gaya visual novel, pemicu otomatis
 - [ ] Tahap 5 — pernikahan, anak, ending
 - [ ] Tahap 6 — perapian & tes
 
