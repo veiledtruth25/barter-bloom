@@ -1,5 +1,5 @@
 import { Vec } from './vec.js';
-import { FIELD, MINE } from '/core/farm.js';
+import { FIELD, MINE } from '../core/farm.js';
 
 export { FIELD, MINE };
 export const SPAWN = new Vec(0, 0, 5);

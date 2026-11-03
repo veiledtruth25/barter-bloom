@@ -1,12 +1,13 @@
-import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END, FESTIVAL_DAYS, festivalOn } from '/core/calendar.js';
-import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '/core/items.js';
+import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END, FESTIVAL_DAYS, festivalOn } from '../core/calendar.js';
+import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '../core/items.js';
 import {
   newGame, advanceMinutes, sleep, fatigue, useTool, harvest, tileKey, serialize, deserialize, eat, ship, feedAnimals, collectProducts,
   cook, buy, countItem, addItem, gift, orderUpgrade, startEvent, advanceEvent, festivalActive, eligibleHeartEvent, eligibleFamilyEvent, orderHouse, propose, petDog, childStage, nextQueued, computeEnding, HOUSE_LEVELS,
-} from '/core/state.js';
-import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '/core/farm.js';
-import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship, PLACE_IDS } from '/core/villagers.js';
+} from '../core/state.js';
+import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '../core/farm.js';
+import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship, PLACE_IDS } from '../core/villagers.js';
 import { Vec } from './vec.js';
+import { ENTRY, BED_SPOT, CAMERA, collide as collideInside, nearestSpot } from './interior.js';
 import { World, SPAWN, DOOR, SPOTS, BUILDINGS, PLACES, doorOf } from './world.js';
 import { Renderer, makeEntity, animatePerson, swingTool, DIRV, dirOf, hex } from './render.js';
 import { play, toggleMute } from './sfx.js';
@@ -35,6 +36,8 @@ for (const [id, v] of Object.entries(VILLAGERS)) {
 }
 const dog = makeEntity(); dog.visible = false;
 const kid = makeEntity({ skin: '#ffd2b0', hair: '#5a3a22', shirt: '#ff8ab0', pants: '#6a8ad8', hat: null }); kid.visible = false;
+let scene = 'outdoor';   // 'outdoor' | 'house' (adegan terpisah seperti HM:BTN)
+const spouseIn = makeEntity(), kidIn = makeEntity();
 let game = null, slot = 0, tool = 'hoe', fishing = null, animalMeshes = [], busy = false, saveTimer = 0;
 const keys = new Set();
 const cam = renderer.cam;
@@ -134,7 +137,7 @@ async function playEvent(run) {
 }
 
 function checkEventTriggers() {
-  if (busy || modalOpen || !game) return;
+  if (busy || modalOpen || !game || scene === 'house') return;
   const p = farmer.position;
   const fest = festivalActive(game);
   if (fest && p.distanceTo(PLACES.plaza) < 9) return playEvent(startEvent(game, 'festival', fest));
@@ -173,6 +176,7 @@ function save() {
 function start(g) {
   game = g; busy = false;
   syncAll();
+  scene = 'outdoor';
   farmer.position.copy(SPAWN);
   $('menu').classList.add('hidden'); $('hud').classList.remove('hidden');
   for (const m of actors.values()) m.userData.place = null;
@@ -204,6 +208,7 @@ function nearPond() { return farmer.position.distanceTo(SPOTS.pond) < 5.2; }
 
 function action() {
   if (busy || !game || modalOpen) return;
+  if (scene === 'house') return toast('Alat tidak bisa dipakai di dalam rumah.');
   if (tool === 'rod') return castRod();
   if (game.stamina <= 0) return toast('Kamu terlalu lelah… cari makanan atau tidur.');
   const { x, z } = targetTile();
@@ -247,8 +252,9 @@ function updateFishing(dt) {
 function interact() {
   if (busy || !game) return;
   if (modalOpen) return closeModal();
+  if (scene === 'house') return houseInteract();
   const p = farmer.position;
-  if (p.distanceTo(DOOR) < 2.4) return houseMenu();
+  if (p.distanceTo(DOOR) < 2.4) return enterHouse();
   if (p.distanceTo(SPOTS.bin) < 2.6) return binMenu();
   if (game.dog && dog.visible && dog.position.distanceTo(p) < 2.2) { toast(petDog(game) ? `🐕 ${game.dog.name} senang diusap! ♥${game.dog.love}` : `${game.dog.name} sudah kamu elus hari ini.`); return; }
   if (kid.visible && kid.position.distanceTo(p) < 2.2) return toast(`👶 ${game.child.name}: ${{ baby: 'Bubu… ga!', toddler: 'Ayah/Ibu! Main!', kid: 'Hari ini aku bantu di ladang, ya!' }[childStage(game)]}`);
@@ -264,17 +270,36 @@ function interact() {
   toast('Tidak ada yang bisa dilakukan di sini.');
 }
 
-function houseMenu() {
-  const rows = () => [
-    { label: '🛏️ Tidur (akhiri hari)', fn: () => goToSleep(false) },
-    { label: '📺 Ramalan cuaca besok', hint: `${WEATHER_ICON[game.forecast]} ${WEATHER_NAME[game.forecast]}`, close: false },
-    ...Object.entries(RECIPES).map(([id, r]) => ({
-      label: `${r.icon} Masak ${r.name}`, hint: Object.entries(r.needs).map(([i, n]) => `${ITEMS[i].icon}×${n}`).join(' '),
-      disabled: !Object.entries(r.needs).every(([i, n]) => countItem(game, i) >= n), close: false,
-      fn: () => { const res = cook(game, id); toast(res === 'ok' ? `Jadi: ${r.name}!` : res === 'full' ? 'Rucksack penuh' : 'Bahan kurang'); },
-    })),
-  ];
-  openLoop('🏠 Rumah', rows, 'Dapur & TV');
+// ---- adegan rumah
+function transition(fn) {
+  busy = true; $('fade').classList.add('on'); $('fadeText').textContent = '';
+  setTimeout(() => { fn(); setTimeout(() => { $('fade').classList.remove('on'); setTimeout(() => { busy = false; }, 250); }, 150); }, 700);
+}
+function enterHouse() { transition(() => { scene = 'house'; farmer.position.copy(ENTRY); farmer.dir = 'up'; }); }
+function exitHouse() { transition(() => { scene = 'outdoor'; farmer.position.set(DOOR.x, 0, DOOR.z + 1.1); farmer.dir = 'down'; }); }
+
+function houseInteract() {
+  const spot = nearestSpot(farmer.position, game);
+  if (!spot) return toast('Tidak ada yang bisa dilakukan di sini.');
+  ({ tv: tvMenu, bed: sleepMenu, diary: () => { save(); toast('📖 Permainan disimpan.'); }, calendar: calendarMenu, chest: toolboxMenu, kitchen: cookMenu }[spot.id])();
+}
+const tvMenu = () => showModal('📺 Televisi', [{ label: 'Ramalan cuaca besok', hint: `${WEATHER_ICON[game.forecast]} ${WEATHER_NAME[game.forecast]}`, disabled: true }], `Hari ini: ${WEATHER_ICON[game.weather]} ${WEATHER_NAME[game.weather]}`);
+const sleepMenu = () => showModal('🛏️ Tempat tidur', [{ label: '😴 Tidur (akhiri hari)', fn: () => goToSleep(false) }], game.minute < 18 * 60 ? 'Masih sore. Yakin mau tidur?' : 'Sudah waktunya istirahat.');
+function calendarMenu() {
+  const rows = Object.values(FESTIVAL_DAYS).sort((a, b) => a.season - b.season || a.day - b.day).map((f) => ({ label: `${f.icon} ${f.name}`, hint: `${SEASONS[f.season]} ${f.day}`, disabled: true }));
+  showModal('🗓️ Kalender festival', rows, `Sekarang: ${SEASONS[game.date.season]} ${game.date.day}`);
+}
+function toolboxMenu() {
+  const rows = UPGRADE.tools.map((t) => ({ label: `${TOOLS[t].icon} ${TOOLS[t].name}`, hint: toolLevel(game, t) ? 'Tembaga' : 'Dasar', disabled: true }));
+  if (game.forge) rows.push({ label: `🔥 Di pandai besi: ${TOOLS[game.forge.tool].name}`, disabled: true });
+  showModal('🧰 Peti perkakas', rows);
+}
+function cookMenu() {
+  openLoop('🍳 Dapur', () => Object.entries(RECIPES).map(([id, r]) => ({
+    label: `${r.icon} Masak ${r.name}`, hint: Object.entries(r.needs).map(([i, n]) => `${ITEMS[i].icon}×${n}`).join(' '),
+    disabled: !Object.entries(r.needs).every(([i, n]) => countItem(game, i) >= n), close: false,
+    fn: () => { const res = cook(game, id); toast(res === 'ok' ? `Jadi: ${r.name}!` : res === 'full' ? 'Rucksack penuh' : 'Bahan kurang'); },
+  })), 'Masak dari bahan di rucksack');
 }
 
 // Modal yang diperbarui otomatis setelah tiap aksi `close:false`.
@@ -412,7 +437,7 @@ function goToSleep(passedOut) {
     for (const m of actors.values()) m.userData.place = null;
     if (r.income) setTimeout(() => toast(`Hasil pengiriman: +${r.income} G`), 1800);
     r.wilted?.length && setTimeout(() => toast(`${r.wilted.length} tanaman layu karena pergantian musim`), 2600);
-    farmer.position.copy(passedOut ? DOOR.clone().add(new Vec(0, 0, 1.5)) : SPAWN);
+    scene = 'house'; farmer.position.copy(BED_SPOT); farmer.dir = 'down';
     save(); hud();
     $('fadeText').textContent = `${SEASONS[game.date.season]} ${game.date.day} · ${r.weekday}`;
     setTimeout(() => { $('fade').classList.remove('on'); busy = false; toast(`Hari baru! Cuaca: ${WEATHER_NAME[game.weather]}`); if (r.family?.chores) setTimeout(() => toast(`💞 Pasanganmu menyiram ${r.family.chores} tanaman dan menyiapkan bekal`), 900); setTimeout(drainQueue, 1600); }, 1400);
@@ -485,11 +510,16 @@ function frame(now) {
     if (!busy && !modalOpen) {
       const dir = heldDir();                    // 4 arah saja: tombol arah yang terakhir ditekan
       if (dir) {
-        const [dx, dz] = DIRV[dir];
+        let [dx, dz] = DIRV[dir];
+        if (scene === 'house') {   // di dalam rumah ruangan diputar, jadi tombol arah mengikuti arah layar (atas = naik di layar)
+          const sy = Math.sin(CAMERA.yaw), cy = Math.cos(CAMERA.yaw);
+          [dx, dz] = { up: [-sy, -cy], down: [sy, cy], right: [cy, -sy], left: [-cy, sy] }[dir];
+        }
         const exhausted = fatigue(game) === 'exhausted' || fatigue(game) === 'collapse';
         speed = (keys.has('shift') ? 6.5 : 4.2) * (exhausted ? 0.6 : 1);
         farmer.position.x += dx * speed * dt; farmer.position.z += dz * speed * dt;
-        world.collide(farmer.position, 0.35, game);
+        if (scene === 'house') { const out = collideInside(farmer.position, game); if (out && dir === 'down' && !busy) exitHouse(); }
+        else { world.collide(farmer.position, 0.35, game); if (dir === 'up' && farmer.position.distanceTo(DOOR) < 0.9 && !busy) enterHouse(); }
         farmer.dir = dir;
       }
       const r = advanceMinutes(game, dt / REAL_SECONDS_PER_MINUTE);
@@ -506,14 +536,17 @@ function frame(now) {
     const t = targetTile(), tk = tileKey(t.x, t.z);
     const markerOn = (inField(t.x, t.z) || !!game.debris[tk]) && !busy && !modalOpen;
     const p = farmer.position;
-    const label = p.distanceTo(DOOR) < 2.4 ? 'E — Rumah (tidur, masak, TV)' : p.distanceTo(SPOTS.bin) < 2.6 ? 'E — Kotak Pengiriman'
+    const label = scene === 'house' ? (nearestSpot(p, game)?.label ?? '') : p.distanceTo(DOOR) < 2.4 ? 'E / ↑ — Masuk rumah' : p.distanceTo(SPOTS.bin) < 2.6 ? 'E — Kotak Pengiriman'
       : (game.dog && dog.visible && dog.position.distanceTo(p) < 2.2) || (kid.visible && kid.position.distanceTo(p) < 2.2) ? 'E — Elus / sapa' : [...actors].some(([, m]) => m.visible && m.position.distanceTo(p) < 2.4) ? 'E — Bicara' : Object.values(BUILDINGS).some((b) => b.shop && p.distanceTo(doorOf(b)) < 2.8) ? 'E — Masuk toko' : (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) ? 'E — Peternakan'
       : isRipe(game.tilled[tk]) ? 'E — Panen' : fishing ? (fishing.bite ? '❗ Spasi sekarang!' : '🎣 Menunggu…') : (tool === 'rod' && nearPond()) ? 'Spasi — Lempar pancing' : '';
     $('prompt').classList.toggle('hidden', !label || modalOpen);
     $('prompt').textContent = label;
     saveTimer += dt; if (saveTimer > 30) { saveTimer = 0; save(); }
     if (Math.floor(game.minute) % 5 === 0 || speed) hud();
-    renderer.draw(dt, { game, world, farmer, actors: [...actors.values()], animals: animalMeshes, dog, kid, marker: markerOn ? t : null, fishing, fireworks: eventRun?.id === 'fireworks' });
+    spouseIn.visible = !!(game.spouse?.married && locationOf(game.spouse.id, game) === 'home_farm');
+    if (spouseIn.visible) { const a = actors.get(game.spouse.id); spouseIn.style = a.style; spouseIn.scale = a.scale; spouseIn.position.set(3.7, 0, 1.9); spouseIn.dir = 'down'; }
+    kidIn.visible = !!childStage(game) && !kid.visible; if (kidIn.visible) { kidIn.style = kid.style; kidIn.scale = kid.scale; kidIn.position.set(5.9, 0, 2.6); kidIn.dir = 'down'; }
+    renderer.draw(dt, { scene, inside: [spouseIn, kidIn], game, world, farmer, actors: [...actors.values()], animals: animalMeshes, dog, kid, marker: markerOn ? t : null, fishing, fireworks: eventRun?.id === 'fireworks' });
   } else {
     renderer.cam.set(0, 0, 5);
     renderer.draw(dt, { game: PREVIEW, world, farmer: { position: renderer.cam, dir: 'down', scale: 1, style: farmer.style, userData: { phase: 0, swing: 0, moving: false }, visible: false }, actors: [], animals: [], dog: null, kid: null, marker: null, fishing: null, fireworks: false });
@@ -525,4 +558,4 @@ $('toolBtn').onclick = () => { tool = TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) 
 $('bagBtn').onclick = () => toggleRucksack();
 menu();
 requestAnimationFrame(frame);
-if (new URLSearchParams(location.search).has('debug')) window.__bb = { get game() { return game; }, farmer, cam, syncAll, actors };   // hook untuk skrip uji
+if (new URLSearchParams(location.search).has('debug')) window.__bb = { get game() { return game; }, get scene() { return scene; }, farmer, cam, syncAll, actors, enterHouse };   // hook untuk skrip uji
