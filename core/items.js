@@ -65,3 +65,9 @@ Object.assign(ITEMS, {
   meal_soup: { name: 'Sup Ayam',      icon: '🍲', sell: 0, buy: 150, stamina: 60 },
   cake:      { name: 'Kue Cokelat',   icon: '🍰', sell: 0, buy: 300, stamina: 40 },
 });
+
+Object.assign(ITEMS, {
+  blue_feather: { name: 'Bulu Biru', icon: '🪶', sell: 0, buy: 2000 },
+});
+ITEMS.wood.buy = 15;
+ITEMS.stone.buy = 15;

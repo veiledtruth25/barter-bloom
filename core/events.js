@@ -1,6 +1,7 @@
 import { dayIndex, festivalOn, FESTIVAL_DAYS } from './calendar.js';
 import { ITEMS, CROPS } from './items.js';
-import { VILLAGERS, locationOf, addFriendship, friendship, heartLevel, HEART_AT } from './villagers.js';
+import { VILLAGERS, locationOf, addFriendship, friendship, HEART_AT } from './villagers.js';
+import { marry, weddingDue, computeEnding, HOUSE_LEVELS } from './family.js';
 
 // Mesin event: tiap event adalah generator yang mengeluarkan "node" untuk ditampilkan klien dan menerima jawaban pemain.
 //   { type:'say', who, text }            -> lanjut (jawaban diabaikan)
@@ -162,6 +163,21 @@ const HEART_EVENTS = {
   } },
 };
 
+HEART_EVENTS.sari_1 = { who: 'sari', level: 1, place: 'plaza', from: 10 * 60, to: 12 * 60, * run(g) {
+  yield say('Sari', 'Oh… maaf, aku sedang membaca sambil berjalan. Kamu pernah baca buku tentang awan?');
+  const c = yield ask('Katamu?', ['Ceritakan padaku', 'Aku lebih suka praktik langsung', 'Buku itu membosankan']);
+  addFriendship(g, 'sari', [20, 8, -8][c]);
+  yield say('Sari', ['Benarkah mau dengar? …Jadi begini, awan itu…', 'Hehe, itu juga benar. Tanah tidak ada di buku.', '…Begitu.'][c]);
+  return 'Pagi yang tenang bersama Sari.';
+} };
+HEART_EVENTS.nina_1 = { who: 'nina', level: 1, place: 'pond', from: 8 * 60, to: 16 * 60, * run(g) {
+  yield say('Nina', 'Jangan bergerak! Cahaya di kolam ini sempurna. Tahan sebentar saja!');
+  const c = yield ask('Apa kata kamu?', ['Berpose', 'Mengintip lukisannya', 'Melanjutkan memancing']);
+  addFriendship(g, 'nina', [16, 14, 4][c]);
+  yield say('Nina', ['Sempurna! Kamu modelku sekarang!', 'Eh, belum selesai! …Tapi bagaimana menurutmu?', 'Ya sudah, kamu jadi latar belakang saja.'][c]);
+  return 'Nina melukis pemandangan kolam.';
+} };
+
 export const HEART_EVENT_IDS = Object.keys(HEART_EVENTS);
 
 // Event yang memenuhi syarat bila pemain berada di dekat `nearPlace` sekarang.
@@ -179,12 +195,59 @@ export function eligibleHeartEvent(g, nearPlace) {
   return null;
 }
 
+// ---- keluarga: pernikahan, anjing, kelahiran, rumah, ending -----------------------------
+const DOG_NAMES = ['Pochi', 'Bruno', 'Kiko'], BABY_NAMES = ['Bima', 'Laras', 'Raya'];
+const FAMILY_EVENTS = {
+  * wedding(g) {
+    const sp = VILLAGERS[g.spouse.id];
+    yield say('Kakek Harjo', 'Hadirin sekalian, hari ini kita menyaksikan dua hati menyatu di desa kecil kita.');
+    yield say(sp.name, `${g.name}… aku tidak menyangka hari ini benar-benar datang. Aku bahagia sekali.`);
+    yield say('Kakek Harjo', 'Dengan restu seluruh warga, kalian kini resmi menjadi suami istri. Selamat!');
+    marry(g); addFriendship(g, g.spouse.id, 20);
+    for (const id of Object.keys(VILLAGERS)) if (id !== g.spouse.id) addFriendship(g, id, 3);
+    g.minute = Math.max(g.minute, 16 * 60);
+    return `${sp.name} kini tinggal di rumahmu. Ia akan membantu menyiram tanaman tiap pagi!`;
+  },
+  * dog(g) {
+    yield say('', 'Pagi ini ada anak anjing kecil yang meringkuk di depan pintu rumahmu. Ia mengibas-ngibaskan ekor.');
+    const i = yield ask('Beri nama anjing itu:', DOG_NAMES);
+    g.dog = { name: DOG_NAMES[i], love: 0, petted: false };
+    yield say(DOG_NAMES[i], 'Guk! Guk!');
+    return `${DOG_NAMES[i]} kini tinggal di ladangmu. Elus tiap hari agar ia makin akrab.`;
+  },
+  * birth(g) {
+    const sp = VILLAGERS[g.spouse.id];
+    yield say('Dokter Raka', 'Selamat! Persalinannya lancar. Bayinya sehat dan cantik/tampan sekali.');
+    yield say(sp.name, 'Lihat, jemarinya mungil sekali… Mau beri nama siapa?');
+    const i = yield ask('Beri nama anak kalian:', BABY_NAMES);
+    g.child = { name: BABY_NAMES[i], born: dayIndex(g.date) };
+    for (const id of ['harjo', 'dewi', 'raka']) addFriendship(g, id, 5);
+    return `${BABY_NAMES[i]} lahir! Seluruh warga turut bahagia.`;
+  },
+  * house(g) {
+    yield say('Mas Joko', `Rumahmu sudah selesai: ${HOUSE_LEVELS[g.house].name}. Silakan lihat-lihat!`);
+    return 'Rumahmu telah diperbesar.';
+  },
+  * ending(g) {
+    const r = computeEnding(g);
+    yield say('Kakek Harjo', 'Tiga tahun sudah berlalu sejak kamu tiba di desa ini. Mari lihat apa yang telah kamu capai.');
+    for (const c of r.cats) yield say('Rapor Desa', `${c.label}: ${c.points}/${c.max} — ${c.note}`);
+    yield say('Kakek Harjo', `Nilai akhirmu ${r.score}/${r.max}. Gelarmu: ${r.rank}!`);
+    return 'Terima kasih sudah bermain. Kamu boleh terus menikmati kehidupan di desa.';
+  },
+};
+
+export function eligibleFamilyEvent(g, nearPlace) {
+  if (nearPlace === 'plaza' && g.spouse && weddingDue(g) && g.minute >= 10 * 60 && g.minute < 16 * 60 && !festivalOn(g.date)) return 'wedding';
+  return null;
+}
+
 // ---- runner -----------------------------------------------------------------
 export function startEvent(g, kind, id, bag) {
-  const key = kind === 'festival' ? `fest:${id}:${g.date.year}` : `heart:${id}`;
+  const key = kind === 'festival' ? `fest:${id}:${g.date.year}` : kind === 'family' ? `fam:${id}${id === 'birth' || id === 'house' ? `:${dayIndex(g.date)}` : ''}` : `heart:${id}`;
   if (done(g)[key]) return null;
   done(g)[key] = true;
-  const gen = kind === 'festival' ? FESTIVALS[id](g, bag) : HEART_EVENTS[id].run(g, bag);
+  const gen = kind === 'festival' ? FESTIVALS[id](g, bag) : kind === 'family' ? FAMILY_EVENTS[id](g, bag) : HEART_EVENTS[id].run(g, bag);
   return { gen, kind, id, started: false, end(text) { if (kind === 'festival') g.minute = Math.max(g.minute, FESTIVAL_DAYS[id].to); return { type: 'end', text }; }, g };
 }
 
@@ -195,4 +258,5 @@ export function advance(run, answer) {
 }
 
 export const festivalIds = () => Object.keys(FESTIVALS);
+export const familyEventIds = () => Object.keys(FAMILY_EVENTS);
 export { CROPS };

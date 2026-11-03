@@ -32,7 +32,7 @@ Docker: `docker compose up -d --build` (container `barterbloom`, port internal 3
 - [x] **Tahap 2** — 9 tanaman 3 musim (layu saat musim berganti, tanaman berulang), gulma/batu/tunggul dengan alat yang tepat, kotak pengiriman (dibayar besok), warung benih, ayam & sapi (pakan, elus, telur/susu), tambang (batu & bijih tembaga muncul ulang tiap hari), memancing (lempar → tunggu ❗ → Spasi), memasak di dapur rumah
 - [x] **Tahap 3** — kota (jalan, alun-alun, sumur, 5 toko, 6 rumah), 8 warga dengan jadwal harian (toko buka/tutup per jam & hari, hujan = di rumah), ngobrol & hadiah sekali sehari, selera hadiah, tingkat hati ungu→merah, pandai besi (tingkatkan alat dengan bijih tembaga), toko benih/bunga/klinik/kedai, cutaway bangunan
 - [x] **Tahap 4** — mesin event berbasis generator (`core/events.js`, dites tanpa browser), 7 festival (Bunga, Memasak, Ternak, Kembang Api, Panen, Malam Bintang, Tahun Baru: cerah, toko tutup, warga ke alun-alun, dekorasi & kembang api), 8 heart event berpilihan dengan syarat hati/tempat/jam/hari, dialog gaya visual novel, pemicu otomatis
-- [ ] Tahap 5 — pernikahan, anak, ending
+- [x] **Tahap 5** — 5 calon pasangan (Ayu, Lina, Maya, Sari, Nina), tukang kayu (rumah → Rumah+Dapur → Kamar Bayi), lamaran dengan Bulu Biru (hati merah + rumah diperbesar), pernikahan 3 hari kemudian di alun-alun, pasangan pindah ke ladang (menyiram tanaman & menyiapkan bekal tiap pagi, toko pasangan tutup), kehamilan → kelahiran → anak tumbuh (bayi/balita/anak), anjing yang bisa dielus, antrean event setelah bangun tidur, rapor & ending di awal tahun ke-3 (juga bisa dilihat kapan saja lewat V → Rapor Desa)
 - [ ] Tahap 6 — perapian & tes
 
 ## Struktur

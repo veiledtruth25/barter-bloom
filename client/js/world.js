@@ -18,6 +18,10 @@ export const BUILDINGS = {
   home_bejo:  { name: 'Rumah Bejo',  x: 23,  z: 27, wall: 0xe8dccb, roof: 0x7a4a3a },
   home_lina:  { name: 'Rumah Lina',  x: -23, z: 38, wall: 0xffeef5, roof: 0xb48cf0 },
   home_raka:  { name: 'Rumah Raka',  x: 23,  z: 38, wall: 0xeaf2f7, roof: 0x3a5a8a },
+  carpenter:  { name: 'Tukang Kayu',  x: 11,  z: 50, wall: 0xe8c99a, roof: 0xd9822b, shop: true },
+  home_joko:  { name: 'Rumah Joko',  x: -11, z: 50, wall: 0xf0dcc0, roof: 0x8a5a2b },
+  home_sari:  { name: 'Rumah Sari',  x: -23, z: 49, wall: 0xe4f4ee, roof: 0x4aa38a },
+  home_nina:  { name: 'Rumah Nina',  x: 23,  z: 49, wall: 0xfff0dc, roof: 0xe0553a },
   home_maya:  { name: 'Rumah Maya',  x: -20, z: 15, wall: 0xf7e8c8, roof: 0x5ab0d8 },
   home_harjo: { name: 'Rumah Kakek', x: 0,   z: 52, wall: 0xe9dfc0, roof: 0x9a7a3a },
 };
@@ -25,6 +29,7 @@ export const doorOf = (b) => new THREE.Vector3(b.x, 0, b.z + 3.0);
 export const PLACES = {
   ...Object.fromEntries(Object.entries(BUILDINGS).map(([k, b]) => [k, doorOf(b)])),
   plaza: new THREE.Vector3(0, 0, 33), farm_road: new THREE.Vector3(0, 0, 17),
+  pond: new THREE.Vector3(10.3, 0, 4), farm_yard: new THREE.Vector3(2.6, 0, -1.2), home_farm: new THREE.Vector3(0, 0, -3.2),
 };
 export const SPOTS = {
   bin: new THREE.Vector3(4.5, 0, -2.2),

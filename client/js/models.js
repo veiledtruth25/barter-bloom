@@ -195,3 +195,19 @@ export function makeLabel(text, color = '#3a2a1c') {
   s.scale.set(2.6, 0.65, 1); s.renderOrder = 10;
   return s;
 }
+
+// ---------------------------------------------------------------- tahap 5
+export function makeDog() {
+  const g = new THREE.Group();
+  const body = mesh(G.sphere(0.32, 16, 12), 0xd9a35a); body.scale.set(0.9, 0.8, 1.4); body.position.y = 0.4; g.add(body);
+  const head = mesh(G.sphere(0.24, 14, 10), 0xd9a35a); head.position.set(0, 0.62, 0.45); g.add(head);
+  const snout = mesh(G.sphere(0.12, 10, 8), 0xf3dcb0); snout.position.set(0, 0.56, 0.66); g.add(snout);
+  for (const s of [-1, 1]) {
+    const ear = mesh(G.sphere(0.1, 8, 6), 0x8a5a2b); ear.scale.set(0.7, 1.3, 0.5); ear.position.set(s * 0.2, 0.75, 0.4); g.add(ear);
+    const eye = mesh(G.sphere(0.04, 8, 6), 0x1d1a2b, { outline: false }); eye.position.set(s * 0.1, 0.68, 0.64); g.add(eye);
+    for (const z of [-0.3, 0.3]) { const l = mesh(G.cyl(0.07, 0.07, 0.3), 0xc08a42); l.position.set(s * 0.15, 0.17, z); g.add(l); }
+  }
+  const tail = mesh(G.capsule(0.05, 0.2), 0xd9a35a); tail.position.set(0, 0.55, -0.5); tail.rotation.x = -0.9; g.add(tail);
+  g.userData.tail = tail;
+  return g;
+}

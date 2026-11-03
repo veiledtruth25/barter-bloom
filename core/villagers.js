@@ -16,11 +16,13 @@ export const SHOPS = {
   inn:    { name: 'Kedai Sari',     owner: 'ayu',   open: M(11), close: M(21), closed: [D.wed] },
   clinic: { name: 'Klinik',         owner: 'raka',  open: M(9),  close: M(16), closed: [D.sun] },
   flower: { name: 'Toko Bunga',     owner: 'lina',  open: M(10), close: M(17), closed: [D.thu] },
+  carpenter: { name: 'Tukang Kayu', owner: 'joko',  open: M(9),  close: M(16), closed: [D.sun] },
 };
 
 export function isShopOpen(g, shopId) {
   const s = SHOPS[shopId];
   if (festivalOn(g.date)) return false;     // semua toko tutup di hari festival
+  if (g.spouse?.married && g.spouse.id === s.owner) return false;   // pasangan berhenti bekerja & tinggal di ladang
   return !s.closed.includes(dayIndex(g.date) % 7) && g.minute >= s.open && g.minute < s.close;
 }
 
@@ -47,13 +49,23 @@ export const VILLAGERS = {
   harjo: { name: 'Kakek Harjo', role: 'Kepala desa', home: 'home_harjo', skin: 0xdcb08a, hair: 0xeeeeee, shirt: 0x9a7a3a, pants: 0x4a3a2a,
     loves: ['dish_porridge'], likes: ['turnip', 'potato', 'herb'], hates: ['boot'],
     lines: { low: ['Selamat datang di desa kami, anak muda.', 'Desa ini kecil, tapi hatinya besar.'], mid: ['Festival tidak lama lagi. Jangan lupa hadir.', 'Ladang itu dulu milik sahabatku.'], high: ['Kamu membuat desa ini hidup lagi.', 'Kakek bangga padamu.'], rain: ['Hujan bagus untuk ladang, jelek untuk lututku.'] } },
+  sari:  { name: 'Sari', role: 'Penjaga perpustakaan', home: 'home_sari', skin: 0xf5cfae, hair: 0x3a2a4a, shirt: 0x6ac4a0, pants: 0x4a5a7a, bachelorette: true,
+    loves: ['cake', 'sunflower'], likes: ['potato', 'herb', 'dish_stir_fry'], hates: ['copper', 'boot'],
+    lines: { low: ['Ssst… ini perpustakaan kecil, tapi kita tetap harus tenang.', 'Kamu suka membaca?'], mid: ['Aku baru menemukan buku tentang bertani. Mau pinjam?', 'Tenang itu menyenangkan, bukan?'], high: ['Kamu satu-satunya yang membuatku mau bicara banyak.', 'Aku mau menulis kisah tentang kita.'], rain: ['Hujan dan buku, kombinasi sempurna.'] } },
+  nina:  { name: 'Nina', role: 'Pelukis pengembara', home: 'home_nina', skin: 0xdcae86, hair: 0xe0553a, shirt: 0xf2a53a, pants: 0x3a3a5a, bachelorette: true,
+    loves: ['flower', 'dish_grilled'], likes: ['trout', 'sardine', 'tomato'], hates: ['stone', 'boot'],
+    lines: { low: ['Pemandangan di sini bagus. Jangan ganggu kanvasku, ya!', 'Aku melukis apa yang kulihat.'], mid: ['Boleh aku lukis ladangmu?', 'Kolam itu warnanya selalu berubah-ubah.'], high: ['Kamu muncul di setiap lukisanku belakangan ini.', 'Aku mulai betah di desa ini… karenamu.'], rain: ['Hujan mengubah semua warna jadi lembut.'] } },
+  joko:  { name: 'Mas Joko', role: 'Tukang kayu', shop: 'carpenter', home: 'home_joko', skin: 0xe6b28a, hair: 0x3a2a1a, shirt: 0xd9822b, pants: 0x4a4a3a,
+    loves: ['wood'], likes: ['dish_grilled', 'meal_soup'], hates: ['flower'],
+    lines: { low: ['Mau bangun sesuatu? Bilang saja.', 'Kayu bagus, rumah awet.'], mid: ['Rumahmu masih bisa diperbesar, lho.', 'Aku suka orang yang mau kerja keras.'], high: ['Kalau ada yang rusak, panggil aku.', 'Rumahmu akan jadi rumah terbaik di desa!'], rain: ['Kerja di bengkel enak kalau hujan.'] } },
   dewi:  { name: 'Dewi', role: 'Cucu kepala desa', home: 'home_harjo', skin: 0xffd2b0, hair: 0x8a3a2a, shirt: 0xffd24a, pants: 0x6a8ad8,
     loves: ['cake', 'flower'], likes: ['egg', 'meal_rice'], hates: ['boot'],
     lines: { low: ['Halo, Kak! Main yuk!', 'Aku lagi cari kodok.'], mid: ['Kakak baik deh!', 'Kemarin aku lihat ikan besar di kolam!'], high: ['Kakak teman terbaikku!', 'Nanti aku mau jadi petani seperti Kakak.'], rain: ['Hujan! Aku boleh main air nggak?'] } },
 };
 
+export const PLACE_IDS = ['plaza', 'farm_road', 'pond', 'farm_yard', 'home_farm', ...['store', 'smith', 'inn', 'clinic', 'flower', 'carpenter'], ...['darto', 'bejo', 'lina', 'raka', 'maya', 'harjo', 'sari', 'nina', 'joko'].map((n) => `home_${n}`)];
+
 // Jadwal: daftar [dari, sampai, tempat, hanya-hari?]. Pertama yang cocok dipakai; selain itu 'home'.
-const PLAZA_DAILY = { raka: null };
 const SCHEDULE = {
   darto: [[M(17), M(20), 'inn', [D.fri, D.sat]]],
   bejo:  [[M(18), M(21), 'inn', [D.fri]]],
@@ -62,14 +74,20 @@ const SCHEDULE = {
   maya:  [[M(10), M(12), 'farm_road', [D.sun]], [M(13), M(18), 'plaza']],
   raka:  [[M(17), M(19), 'plaza', [D.wed]]],
   harjo: [[M(9), M(12), 'plaza'], [M(15), M(17), 'plaza']],
+  sari:  [[M(10), M(12), 'plaza'], [M(14), M(16), 'plaza']],
+  nina:  [[M(8), M(16), 'pond']],
+  joko:  [],
   dewi:  [[M(8), M(18), 'plaza']],
 };
-void PLAZA_DAILY;
 
 export function locationOf(id, g) {
   const v = VILLAGERS[id], wd = dayIndex(g.date) % 7, t = g.minute;
   const rain = g.weather === 'rain' || g.weather === 'storm' || g.weather === 'snow';
   const fest = festivalOn(g.date);
+  if (g.spouse?.married && g.spouse.id === id) {            // pasangan tinggal di ladang
+    if (fest && t >= FESTIVAL_DAYS[fest].from - 30 && t < FESTIVAL_DAYS[fest].to) return 'plaza';
+    return t >= M(9) && t < M(17) && !rain ? 'farm_yard' : 'home_farm';
+  }
   if (fest && t >= FESTIVAL_DAYS[fest].from - 30 && t < FESTIVAL_DAYS[fest].to) return 'plaza';   // semua warga berkumpul
   if (v.shop) {
     const s = SHOPS[v.shop];

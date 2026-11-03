@@ -3,11 +3,11 @@ import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END, FESTIV
 import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '/core/items.js';
 import {
   newGame, advanceMinutes, sleep, fatigue, useTool, harvest, tileKey, serialize, deserialize, eat, ship, feedAnimals, collectProducts,
-  cook, buy, countItem, addItem, gift, orderUpgrade, startEvent, advanceEvent, festivalActive, eligibleHeartEvent,
+  cook, buy, countItem, addItem, gift, orderUpgrade, startEvent, advanceEvent, festivalActive, eligibleHeartEvent, eligibleFamilyEvent, orderHouse, propose, petDog, childStage, nextQueued, computeEnding, HOUSE_LEVELS,
 } from '/core/state.js';
 import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '/core/farm.js';
-import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship } from '/core/villagers.js';
-import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, makeAnimal, makeLabel } from './models.js';
+import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship, PLACE_IDS } from '/core/villagers.js';
+import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, makeAnimal, makeLabel, makeDog } from './models.js';
 import { World, SPAWN, DOOR, SPOTS, BUILDINGS, PLACES, doorOf } from './world.js';
 import { mesh, G } from './toon.js';
 import { Fireworks } from './fx.js';
@@ -37,6 +37,7 @@ const marker = mesh(G.box(1, 0.06, 1, 0.03), 0xfff08a, { outline: false, shadow:
 marker.material = marker.material.clone(); marker.material.transparent = true; marker.material.opacity = 0.6;
 scene.add(marker);
 
+for (const id of PLACE_IDS) if (!PLACES[id]) console.error('tempat tanpa koordinat:', id);
 const fireworks = new Fireworks(scene);
 let eventRun = null, eventResolve = null;
 const actors = new Map();
@@ -47,6 +48,8 @@ for (const [id, v] of Object.entries(VILLAGERS)) {
   m.userData.offset = new THREE.Vector3(((id.charCodeAt(0) * 7) % 5 - 2) * 0.6, 0, ((id.charCodeAt(1) * 3) % 3 - 1) * 0.6);
   m.userData.place = null; scene.add(m); actors.set(id, m);
 }
+const dog = makeDog(); dog.visible = false; scene.add(dog);
+const kid = makeFarmer({ skin: 0xffd2b0, hair: 0x5a3a22, shirt: 0xff8ab0, pants: 0x6a8ad8, hat: 0xffd24a }); kid.visible = false; scene.add(kid);
 let game = null, slot = 0, tool = 'hoe', fishing = null, animalMeshes = [], debrisMeshes = new Map(), facing = new THREE.Vector2(0, 1), busy = false, saveTimer = 0;
 const cam = { yaw: Math.PI / 4, target: Math.PI / 4, dist: 12.5, pitch: 0.95 };
 const keys = new Set();
@@ -117,6 +120,13 @@ function showNode(node) {
   });
 }
 
+async function drainQueue() {
+  for (let q = nextQueued(game); q; q = nextQueued(game)) {
+    const run = startEvent(game, q.kind, q.id);
+    if (run) await playEvent(run);
+  }
+}
+
 async function playEvent(run) {
   if (!run) return;
   busy = true; modalOpen = true; eventRun = run; closeModal(); modalOpen = true;
@@ -141,6 +151,8 @@ function checkEventTriggers() {
   if (fest && p.distanceTo(PLACES.plaza) < 9) return playEvent(startEvent(game, 'festival', fest));
   for (const place of Object.keys(PLACES)) {
     if (place.startsWith('home') || p.distanceTo(PLACES[place]) > 3.8) continue;
+    const fam = eligibleFamilyEvent(game, place);
+    if (fam) return playEvent(startEvent(game, 'family', fam));
     const id = eligibleHeartEvent(game, place);
     if (id) return playEvent(startEvent(game, 'heart', id));
   }
@@ -261,6 +273,8 @@ function interact() {
   const p = farmer.position;
   if (p.distanceTo(DOOR) < 2.4) return houseMenu();
   if (p.distanceTo(SPOTS.bin) < 2.6) return binMenu();
+  if (game.dog && dog.visible && dog.position.distanceTo(p) < 2.2) { toast(petDog(game) ? `🐕 ${game.dog.name} senang diusap! ♥${game.dog.love}` : `${game.dog.name} sudah kamu elus hari ini.`); return; }
+  if (kid.visible && kid.position.distanceTo(p) < 2.2) return toast(`👶 ${game.child.name}: ${{ baby: 'Bubu… ga!', toddler: 'Ayah/Ibu! Main!', kid: 'Hari ini aku bantu di ladang, ya!' }[childStage(game)]}`);
   for (const [id, m] of actors) if (m.visible && m.position.distanceTo(p) < 2.4) return villagerMenu(id);
   for (const [id, b] of Object.entries(BUILDINGS)) if (b.shop && p.distanceTo(doorOf(b)) < 2.8) return shopMenu(id);
   if (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) return ranchMenu();
@@ -318,13 +332,26 @@ function shopMenu(id) {
   if (!isShopOpen(game, id)) return toast(`${SHOPS[id].name} tutup. ${shopStatus(id)}`);
   const title = `🏪 ${SHOPS[id].name}`, note = () => `Uangmu: ${game.gold} G`;
   const stock = {
-    store: () => Object.entries(CROPS).filter(([cid]) => seedSeasonOk(game, `${cid}_seed`)).map(([cid, c]) => buyRow(`${cid}_seed`, `${c.icon} Benih ${c.name}`)),
+    store: () => [...Object.entries(CROPS).filter(([cid]) => seedSeasonOk(game, `${cid}_seed`)).map(([cid, c]) => buyRow(`${cid}_seed`, `${c.icon} Benih ${c.name}`)), buyRow('blue_feather', '🪶 Bulu Biru (untuk melamar)')],
+    carpenter: () => carpenterRows(),
     flower: () => [buyRow('flower', '🌹 Bunga Mawar'), buyRow('sunflower', '🌻 Bunga Matahari')],
     clinic: () => [buyRow('herb', '🍵 Jamu (+40 stamina)')],
     inn: () => [buyRow('meal_rice', '🍚 Nasi Hangat'), buyRow('meal_soup', '🍲 Sup Ayam'), buyRow('cake', '🍰 Kue Cokelat')],
     smith: () => smithRows(),
   }[id];
   openLoop(title, stock, note());
+}
+
+function carpenterRows() {
+  const rows = [buyRow('wood', '🪵 Kayu'), buyRow('stone', '🪨 Batu')];
+  const next = HOUSE_LEVELS[game.house + 1];
+  if (game.build) rows.push({ label: `🔨 Membangun: ${HOUSE_LEVELS[game.build.level].name}`, hint: 'selesai beberapa hari lagi', disabled: true });
+  else if (next) rows.push({
+    label: `🏠 Perbesar rumah → ${next.name}`, hint: `${next.gold} G · ${next.wood} kayu · ${next.stone} batu · ${next.days} hari`, close: false,
+    fn: () => { const r = orderHouse(game); toast({ ok: `Dipesan! Selesai ${next.days} hari lagi.`, gold: 'Uang kurang.', material: 'Kayu/batu kurang.', busy: 'Masih ada pembangunan.' }[r] || '…'); },
+  });
+  else rows.push({ label: 'Rumahmu sudah sebesar-besarnya', disabled: true });
+  return rows;
 }
 
 function smithRows() {
@@ -349,9 +376,17 @@ function villagerMenu(id) {
   let said = talk(game, id), lines = said.gained ? `+${said.gained} poin persahabatan` : '';
   const title = () => `${v.name} · ${HEART_NAMES[hearts(game, id)]} ${'♥'.repeat(hearts(game, id) + 1)}`;
   const draw = (note, rows) => showModal(title(), rows, note);
+  const spouse = game.spouse?.id === id ? (game.spouse.married ? 'Pasangan' : 'Tunangan') : null;
+  const proposeRow = () => (v.bachelorette && !game.spouse ? [{ label: '💍 Beri Bulu Biru (melamar)', close: false, fn: () => {
+    const r = propose(game, id);
+    lines = { ok: `${v.name} menerima lamaranmu! Pernikahan ${3} hari lagi di alun-alun (tepat pukul 10:00–16:00).`, hearts: 'Hatinya belum cukup (butuh hati merah penuh).', house: 'Perbesar rumahmu dulu di Tukang Kayu.', feather: 'Kamu belum punya Bulu Biru (dijual di Toko Serba Ada).', taken: 'Kamu sudah bertunangan.' }[r] || '…';
+    if (r === 'ok') said = { text: 'Aku… mau. Aku mau, dengan senang hati.' };
+    renderRucksack(); main();
+  } }] : []);
   const main = () => draw(`“${said.text}” ${lines ? `\n(${lines})` : ''}`, [
     { label: '🎁 Beri hadiah', close: false, fn: () => giftList() },
-    { label: `📋 ${v.role}`, disabled: true },
+    ...proposeRow(),
+    { label: `📋 ${spouse ? `💞 ${spouse}` : v.role}`, disabled: true },
   ]);
   const giftList = () => {
     const rows = game.rucksack.filter(Boolean).map((s) => ({ label: `${ITEMS[s.id].icon} ${ITEMS[s.id].name} ×${s.n}`, close: false,
@@ -366,8 +401,14 @@ function villagerMenu(id) {
   main();
 }
 
+function reportPanel() {
+  const r = computeEnding(game);
+  showModal(`🏁 Rapor Desa — ${r.rank}`, r.cats.map((c) => ({ label: c.label, hint: `${c.points}/${c.max} · ${c.note}`, disabled: true })), `Nilai ${r.score}/${r.max}`);
+}
+
 function villagersPanel() {
-  showModal('🏘️ Warga Desa', Object.entries(VILLAGERS).map(([id, v]) => ({ label: `${v.name}`, hint: `${HEART_NAMES[hearts(game, id)]} · ${friendship(game, id)}/255`, disabled: true })),
+  showModal('🏘️ Warga Desa', [...Object.entries(VILLAGERS).map(([id, v]) => ({ label: `${v.name}`, hint: `${HEART_NAMES[hearts(game, id)]} · ${friendship(game, id)}/255${game.spouse?.id === id ? ' 💍' : ''}`, disabled: true })),
+    { label: '🏁 Rapor Desa', fn: () => setTimeout(reportPanel, 0) }],
     Object.entries(SHOPS).map(([id]) => `${SHOPS[id].name}: ${shopStatus(id)}`).join('\n'));
 }
 
@@ -397,7 +438,7 @@ function goToSleep(passedOut) {
     farmer.position.copy(passedOut ? DOOR.clone().add(new THREE.Vector3(0, 0, 1.5)) : SPAWN);
     save(); hud();
     $('fadeText').textContent = `${SEASONS[game.date.season]} ${game.date.day} · ${r.weekday}`;
-    setTimeout(() => { $('fade').classList.remove('on'); busy = false; toast(`Hari baru! Cuaca: ${WEATHER_NAME[game.weather]}`); }, 1400);
+    setTimeout(() => { $('fade').classList.remove('on'); busy = false; toast(`Hari baru! Cuaca: ${WEATHER_NAME[game.weather]}`); if (r.family?.chores) setTimeout(() => toast(`💞 Pasanganmu menyiram ${r.family.chores} tanaman dan menyiapkan bekal`), 900); setTimeout(drainQueue, 1600); }, 1400);
   }, 1000);
 }
 
@@ -420,6 +461,25 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+function updateFamily(dt, time) {
+  const yard = PLACES.farm_yard;
+  dog.visible = !!game.dog;
+  if (game.dog) {
+    const a = time * 0.6;
+    dog.position.set(yard.x + 1.8 + Math.cos(a) * 1.6, 0, yard.z + 1.5 + Math.sin(a * 1.3) * 1.2);
+    dog.rotation.y = Math.atan2(-Math.sin(a) * 1.6, Math.cos(a * 1.3) * 1.56);
+    dog.position.y = Math.abs(Math.sin(time * 6)) * 0.05; dog.userData.tail.rotation.z = Math.sin(time * 14) * 0.5;
+  }
+  const stage = childStage(game);
+  kid.visible = !!stage && !(game.minute < 7 * 60 || game.minute > 20 * 60) && game.weather !== 'rain';
+  if (stage) {
+    kid.scale.setScalar(stage === 'baby' ? 0.32 : stage === 'toddler' ? 0.5 : 0.7);
+    const a = time * (stage === 'baby' ? 0.1 : 0.4);
+    kid.position.set(yard.x - 0.8 + Math.cos(a) * (stage === 'baby' ? 0.2 : 1.4), 0, yard.z + 1.8 + Math.sin(a) * (stage === 'baby' ? 0.2 : 0.9));
+    kid.rotation.y = a + 1.5; animateFarmer(kid, dt, stage === 'baby' ? 0 : 1.2);
+  }
+}
 
 function updateActors(dt) {
   for (const [id, m] of actors) {
@@ -470,13 +530,14 @@ function frame() {
     checkEventTriggers();
     fireworks.update(dt, eventRun?.id === 'fireworks', 0, 33);
     updateActors(dt);
+    updateFamily(dt, performance.now() / 1000);
     for (const m of animalMeshes) { m.userData.t += dt; m.position.x = m.userData.home.x + Math.sin(m.userData.t * 0.5) * 0.6; m.rotation.y = Math.cos(m.userData.t * 0.5); m.position.y = Math.abs(Math.sin(m.userData.t * 3)) * 0.04; }
     const t = targetTile(), tk = tileKey(t.x, t.z);
     marker.visible = (inField(t.x, t.z) || !!game.debris[tk]) && !busy;
     marker.position.set(t.x + 0.5, 0.08, t.z + 0.5);
     const p = farmer.position;
     const label = p.distanceTo(DOOR) < 2.4 ? 'E — Rumah (tidur, masak, TV)' : p.distanceTo(SPOTS.bin) < 2.6 ? 'E — Kotak Pengiriman'
-      : [...actors].some(([, m]) => m.visible && m.position.distanceTo(p) < 2.4) ? 'E — Bicara' : Object.values(BUILDINGS).some((b) => b.shop && p.distanceTo(doorOf(b)) < 2.8) ? 'E — Masuk toko' : (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) ? 'E — Peternakan'
+      : (game.dog && dog.visible && dog.position.distanceTo(p) < 2.2) || (kid.visible && kid.position.distanceTo(p) < 2.2) ? 'E — Elus / sapa' : [...actors].some(([, m]) => m.visible && m.position.distanceTo(p) < 2.4) ? 'E — Bicara' : Object.values(BUILDINGS).some((b) => b.shop && p.distanceTo(doorOf(b)) < 2.8) ? 'E — Masuk toko' : (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) ? 'E — Peternakan'
       : isRipe(game.tilled[tk]) ? 'E — Panen' : fishing ? (fishing.bite ? '❗ Spasi sekarang!' : '🎣 Menunggu…') : (tool === 'rod' && nearPond()) ? 'Spasi — Lempar pancing' : '';
     $('prompt').classList.toggle('hidden', !label || modalOpen);
     $('prompt').textContent = label;

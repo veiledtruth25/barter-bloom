@@ -256,7 +256,7 @@ test('pandai besi: butuh bijih & emas, jadi setelah 2 hari, alat lebih hemat sta
 });
 
 test('toko menjual barang berharga; semua barang beli punya harga', () => {
-  assert.ok(Object.keys(SHOPS).length === 5);
+  assert.ok(Object.keys(SHOPS).length === 6);
   for (const [id, it] of Object.entries(ITEMS)) assert.ok(it.name && it.icon, id);
   const g = newGame('A', 1);
   assert.equal(buy(g, 'meal_soup', 1), 'ok'); assert.equal(g.gold, 150);
@@ -369,4 +369,122 @@ test('heart event: setiap event bisa dimainkan dengan semua pilihan sampai seles
 test('save menyimpan event yang sudah selesai', () => {
   const g = at(newGame('A', 1), 0, 8, 10 * 60); play(startEvent(g, 'festival', 'flower'), (n) => (n.type === 'person' ? 'ayu' : 0));
   const h = deserialize(serialize(g)); assert.equal(startEvent(h, 'festival', 'flower'), null);
+});
+
+// ---------------------------------------------------------------- tahap 5
+import { orderHouse, propose, nextQueued, computeEnding, weddingDue, petDog, childStage, daysMarried, eligibleFamilyEvent } from '../core/state.js';
+import { PLACE_IDS } from '../core/villagers.js';
+import { familyEventIds } from '../core/events.js';
+
+const sleepDays = (g, n) => { for (let i = 0; i < n; i++) { g.forecast = 'sunny'; sleep(g); } };
+const married = (g, id = 'ayu') => { g.house = 2; g.friend[id] = 255; g.spouse = { id, wedding: 0, married: true, since: dayIndex(g.date) }; return g; };
+
+test('5 calon pasangan, tukang kayu & semua tempat jadwal dikenal; lokasi selalu valid', () => {
+  assert.equal(Object.values(VILLAGERS).filter((v) => v.bachelorette).length, 5);
+  assert.ok(VILLAGERS.joko.shop === 'carpenter' && SHOPS.carpenter.owner === 'joko');
+  const g = newGame('A', 1);
+  for (const id of Object.keys(VILLAGERS)) for (let d = 1; d <= 7; d++) for (const w of ['sunny', 'rain']) for (let m = 6 * 60; m < 24 * 60; m += 90) {
+    at(g, 1, d, m, w); assert.ok(PLACE_IDS.includes(locationOf(id, g)), `${id} ${d} ${m} ${w}: ${locationOf(id, g)}`);
+  }
+  for (const v of Object.values(VILLAGERS)) assert.ok(PLACE_IDS.includes(v.home));
+});
+
+test('tukang kayu: perluasan rumah butuh uang & bahan, jadi setelah beberapa hari, urut level', () => {
+  const g = newGame('A', 1);
+  assert.equal(orderHouse(g), 'gold');
+  g.gold = 9000; assert.equal(orderHouse(g), 'material');
+  g.rucksack.fill(null);
+  for (let i = 0; i < 5; i++) addItem(g, 'wood', 9); addItem(g, 'stone', 20);
+  assert.equal(orderHouse(g), 'ok'); assert.equal(g.gold, 6000); assert.equal(orderHouse(g), 'busy');
+  sleepDays(g, 2); assert.equal(g.house, 0); sleepDays(g, 1); assert.equal(g.house, 1);
+  assert.ok(g.queue.some((q) => q.id === 'house'));
+  assert.equal(orderHouse(g), 'material', 'uang cukup (6000), bahan level 2 belum');
+  g.gold = 100; assert.equal(orderHouse(g), 'gold');
+});
+
+test('lamaran: syarat bulu biru, hati merah, rumah, bukan calon pasangan, belum bertunangan', () => {
+  const g = newGame('A', 1);
+  assert.equal(propose(g, 'dewi'), 'notbachelorette');
+  assert.equal(propose(g, 'ayu'), 'hearts');
+  g.friend.ayu = 255; assert.equal(propose(g, 'ayu'), 'house');
+  g.house = 1; assert.equal(propose(g, 'ayu'), 'feather');
+  addItem(g, 'blue_feather', 1); assert.equal(propose(g, 'ayu'), 'ok');
+  assert.equal(countItem(g, 'blue_feather'), 0);
+  assert.equal(g.spouse.id, 'ayu'); assert.equal(g.spouse.married, false);
+  addItem(g, 'blue_feather', 1); g.friend.lina = 255; assert.equal(propose(g, 'lina'), 'taken');
+});
+
+test('pernikahan: pernikahan 3 hari kemudian di alun-alun, lalu pasangan pindah ke ladang & toko tutup', () => {
+  const g = newGame('A', 1); g.friend.ayu = 255; g.house = 1; addItem(g, 'blue_feather', 1); propose(g, 'ayu');
+  assert.ok(!weddingDue(g)); at(g, 0, 3, 12 * 60); assert.equal(eligibleFamilyEvent(g, 'plaza'), null);
+  g.date.day = 4; g.minute = 12 * 60; g.weather = 'sunny';                       // Semi 4 = Kamis (3 hari kemudian dari Semi 1)
+  assert.ok(weddingDue(g)); assert.equal(eligibleFamilyEvent(g, 'plaza'), 'wedding'); assert.equal(eligibleFamilyEvent(g, 'inn'), null);
+  assert.equal(locationOf('ayu', g), 'inn', 'sebelum menikah tetap bekerja');
+  const nodes = play(startEvent(g, 'family', 'wedding'));
+  assert.ok(g.spouse.married); assert.ok(nodes.at(-1).text.includes('Ayu'));
+  at(g, 0, 5, 12 * 60); assert.equal(locationOf('ayu', g), 'farm_yard');
+  at(g, 0, 5, 12 * 60, 'rain'); assert.equal(locationOf('ayu', g), 'home_farm');
+  at(g, 0, 5, 20 * 60); assert.equal(locationOf('ayu', g), 'home_farm');
+  at(g, 0, 5, 12 * 60); assert.ok(!isShopOpen(g, 'inn'), 'kedai tutup karena pemiliknya menikah denganmu');
+  assert.equal(startEvent(g, 'family', 'wedding'), null);
+});
+
+test('pasangan: menyiram tanaman & meninggalkan bekal tiap pagi', () => {
+  const g = married(newGame('A', 1)); clear(g);
+  for (const x of [0, 1, 2]) { useTool(g, 'hoe', x, 3); useTool(g, 'seed', x, 3); }
+  g.forecast = 'sunny'; const r = sleep(g);
+  assert.equal(r.family.chores, 3); assert.ok(Object.values(g.tilled).every((t) => t.watered));
+  assert.equal(countItem(g, 'meal_rice'), 1); assert.equal(g.stats.spouseDays, 1);
+  assert.equal(g.stats.spouseDays, 1);
+});
+
+test('anak: hamil setelah syarat, lahir 10 hari kemudian, tumbuh bertahap', () => {
+  const g = married(newGame('A', 1)); g.house = 1;
+  sleepDays(g, 20); assert.equal(g.expecting, null, 'butuh kamar bayi');
+  g.house = 2; g.flags.dogOffered = true;
+  sleepDays(g, 1); assert.ok(g.expecting);
+  sleepDays(g, 11);
+  const q = g.queue.find((x) => x.id === 'birth'); assert.ok(q, 'kelahiran masuk antrean');
+  play(startEvent(g, 'family', 'birth'), (n) => (n.type === 'choice' ? 1 : 0));
+  assert.equal(g.child.name, 'Laras'); assert.equal(childStage(g), 'baby');
+  sleepDays(g, 20); assert.equal(childStage(g), 'toddler'); sleepDays(g, 40); assert.equal(childStage(g), 'kid');
+  assert.ok(daysMarried(g) > 60);
+  const before = g.queue.length; sleepDays(g, 30); assert.ok(!g.queue.slice(before).some((x) => x.id === 'birth'), 'hanya satu anak');
+});
+
+test('anjing: ditawarkan sekali lewat antrean, diberi nama, bisa dielus sekali sehari', () => {
+  const g = newGame('A', 1);
+  assert.equal(nextQueued(g), null);
+  sleep(g); const q = nextQueued(g); assert.deepEqual(q, { kind: 'family', id: 'dog' });
+  play(startEvent(g, 'family', 'dog'), (n) => (n.type === 'choice' ? 2 : 0));
+  assert.equal(g.dog.name, 'Kiko');
+  assert.ok(petDog(g)); assert.ok(!petDog(g)); assert.equal(g.dog.love, 1);
+  sleep(g); assert.ok(petDog(g)); assert.equal(g.queue.some((x) => x.id === 'dog'), false, 'tidak ditawarkan lagi');
+});
+
+test('ending: antrean di awal tahun ke-3, rapor berskor 0-100, rank naik seiring capaian', () => {
+  const g = newGame('A', 1); g.flags.dogOffered = true;
+  const low = computeEnding(g); assert.ok(low.score < 25 && low.rank === 'Petani Pemula');
+  g.date = { year: 1, season: 3, day: 30 }; g.forecast = 'sunny'; sleep(g);
+  assert.ok(!g.queue.some((q) => q.id === 'ending'), 'belum tahun ke-3');
+  g.date = { year: 2, season: 3, day: 30 }; sleep(g);
+  assert.equal(g.date.year, 3); assert.equal(g.date.season, 0);
+  assert.ok(g.queue.some((q) => q.id === 'ending'));
+  const nodes = play(startEvent(g, 'family', 'ending'));
+  assert.ok(nodes.length >= 9); assert.match(nodes.at(-2).text, /Nilai akhirmu \d+\/100/);
+  married(g); g.child = { name: 'X', born: 0 }; g.dog = { name: 'P', love: 3 }; g.gold = 20000; g.stats.shippedGold = 20000; g.stats.harvests = 100;
+  g.toolLevel = { hoe: 1, water: 1, sickle: 1, axe: 1, hammer: 1 };
+  for (const id of Object.keys(VILLAGERS)) g.friend[id] = 255;
+  g.animals = Array.from({ length: 5 }, () => ({ type: 'cow', love: 10 }));
+  const high = computeEnding(g); assert.ok(high.score >= 85 && high.rank === 'Legenda Desa', JSON.stringify(high));
+  assert.ok(high.score <= 100);
+});
+
+test('semua event keluarga & heart event baru bisa dimainkan; save v5 bolak-balik', () => {
+  assert.deepEqual(familyEventIds().sort(), ['birth', 'dog', 'ending', 'house', 'wedding']);
+  const g = married(newGame('A', 1));
+  for (const id of ['wedding', 'dog', 'birth', 'house', 'ending']) { g.spouse.married = id !== 'wedding' ? true : false; g.spouse.wedding = 0; const n = play(startEvent(g, 'family', id)); assert.equal(n.at(-1).type, 'end', id); }
+  for (const id of ['sari_1', 'nina_1']) assert.equal(play(startEvent(newGame('A', 1), 'heart', id)).at(-1).type, 'end');
+  const h = newGame('A', 2); h.spouse = { id: 'lina', wedding: 5, married: false, since: null };
+  assert.deepEqual(deserialize(serialize(h)), h);
 });
