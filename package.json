@@ -1,7 +1,7 @@
 {
   "name": "barter-bloom",
   "version": "1.0.0",
-  "description": "Multiplayer 3D farming game inspired by Harvest Moon, with player-to-player trading.",
+  "description": "Game pertanian single player bergaya Harvest Moon: Back to Nature, Cartoon/Stylized 3D.",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
@@ -15,10 +15,7 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.21.2",
-    "socket.io": "^4.8.1",
     "three": "^0.170.0"
   },
-  "devDependencies": {
-    "socket.io-client": "^4.8.1"
-  }
+  "devDependencies": {}
 }
