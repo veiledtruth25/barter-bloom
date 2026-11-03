@@ -1,11 +1,11 @@
-import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END, FESTIVAL_DAYS, festivalOn } from '/core/calendar.js';
-import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '/core/items.js';
+import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END, FESTIVAL_DAYS, festivalOn } from '../core/calendar.js';
+import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '../core/items.js';
 import {
   newGame, advanceMinutes, sleep, fatigue, useTool, harvest, tileKey, serialize, deserialize, eat, ship, feedAnimals, collectProducts,
   cook, buy, countItem, addItem, gift, orderUpgrade, startEvent, advanceEvent, festivalActive, eligibleHeartEvent, eligibleFamilyEvent, orderHouse, propose, petDog, childStage, nextQueued, computeEnding, HOUSE_LEVELS,
-} from '/core/state.js';
-import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '/core/farm.js';
-import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship, PLACE_IDS } from '/core/villagers.js';
+} from '../core/state.js';
+import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '../core/farm.js';
+import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship, PLACE_IDS } from '../core/villagers.js';
 import { Vec } from './vec.js';
 import { World, SPAWN, DOOR, SPOTS, BUILDINGS, PLACES, doorOf } from './world.js';
 import { Renderer, makeEntity, animatePerson, swingTool, DIRV, dirOf, hex } from './render.js';

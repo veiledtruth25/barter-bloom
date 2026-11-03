@@ -17,6 +17,7 @@ npm run smoke        # smoke test browser (butuh Playwright; BASE=http://localho
 - container `barterbloom`, port internal **3000**, jaringan eksternal `evertwo-network`
 - port host hanya `127.0.0.1:7474` untuk uji lokal; user non-root; healthcheck `GET /`
 - tidak perlu volume: save ada di browser pemain
+- aset disajikan di `/v/<build>/...` (build = hash isi berkas) dengan cache 1 tahun; HTML `no-cache`. Ini mencegah JS lama tersangkut di cache Cloudflare/browser setelah deploy
 - game tidak lagi memakai websocket (single player), jadi dukungan websocket di proxy tidak diperlukan
 
 ## Kontrol

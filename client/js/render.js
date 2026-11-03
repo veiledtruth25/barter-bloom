@@ -1,6 +1,6 @@
-import { CROPS, TOOLS } from '/core/items.js';
+import { CROPS, TOOLS } from '../core/items.js';
 import { MINE, STRUCTURES, POND, FENCE, SPOTS } from './world.js';
-import { festivalOn } from '/core/calendar.js';
+import { festivalOn } from '../core/calendar.js';
 import { Vec } from './vec.js';
 
 const OUT = '#3a2a1c';
