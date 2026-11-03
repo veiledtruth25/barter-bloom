@@ -6,25 +6,23 @@
   <title>Barter Bloom — Cerita Desa</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="/css/style.css" />
-  <script type="importmap">
-    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
-  </script>
 </head>
 <body>
   <canvas id="game"></canvas>
 
   <div id="hud" class="hidden">
     <div class="card date">
-      <div id="seasonIcon" class="season">🌸</div>
-      <div><div id="dateText" class="big"></div><div id="weatherText"></div><small id="forecastText"></small></div>
-      <div id="clockText" class="clock"></div>
+      <div class="gem"></div>
+      <div class="dm"><div id="dateText" class="big"></div><div id="clockText" class="clock"></div></div>
+      <div id="seasonIcon" class="season"></div>
     </div>
+    <div class="subinfo"><span id="seasonName"></span> · <span id="weatherText"></span><br><small id="forecastText"></small></div>
     <div class="card stamina"><div id="faceIcon" class="face">😄</div><div class="bar"><div id="staminaBar"></div></div></div>
     <div class="card tool" id="toolBtn"><span id="toolIcon"></span><span id="toolName"></span><kbd>Q</kbd></div>
     <div class="card gold" id="goldText"></div>
     <button class="card bag" id="bagBtn">🎒 <kbd>I</kbd></button>
     <div id="prompt" class="prompt hidden"></div>
-    <div class="help">WASD gerak · Shift lari · Spasi pakai alat · E interaksi/panen · Q ganti alat · Z/X putar kamera · I tas · V warga · M suara · Esc menu</div>
+    <div class="help">WASD gerak · Shift lari · Spasi pakai alat · E interaksi/panen · Q ganti alat · I tas · V warga · M suara · Esc menu</div>
   </div>
 
   <div id="dialog" class="hidden"></div>
