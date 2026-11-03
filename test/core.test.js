@@ -184,3 +184,80 @@ test('save: serialisasi bolak-balik & tolak versi lain', () => {
   assert.deepEqual(deserialize(serialize(g)), g);
   assert.throws(() => deserialize('{"version":99}'));
 });
+
+// ---------------------------------------------------------------- tahap 3
+import { VILLAGERS, SHOPS, isShopOpen, locationOf, talk, giftReaction, heartLevel, hearts, friendship } from '../core/villagers.js';
+import { collectUpgrade, toolCost, toolLevel } from '../core/farm.js';
+import { gift, orderUpgrade } from '../core/state.js';
+import { ITEMS } from '../core/items.js';
+
+const at = (g, season, day, minute, weather = 'sunny') => { g.date = { year: 1, season, day }; g.minute = minute; g.weather = weather; return g; };
+
+test('toko: jam buka dan hari tutup', () => {
+  const g = newGame('A', 1);            // Semi 1 = Senin
+  at(g, 0, 1, 9 * 60); assert.ok(isShopOpen(g, 'store'));
+  at(g, 0, 1, 8 * 60 + 59); assert.ok(!isShopOpen(g, 'store'));
+  at(g, 0, 1, 17 * 60); assert.ok(!isShopOpen(g, 'store'));
+  at(g, 0, 2, 12 * 60); assert.ok(!isShopOpen(g, 'store'), 'Selasa tutup');
+  at(g, 0, 7, 12 * 60); assert.ok(!isShopOpen(g, 'clinic'), 'Minggu klinik tutup');
+  at(g, 0, 1, 12 * 60); assert.ok(isShopOpen(g, 'clinic'));
+});
+
+test('jadwal warga: pemilik toko di toko saat buka, di rumah malam, hujan = di rumah', () => {
+  const g = newGame('A', 1);
+  at(g, 0, 1, 12 * 60); assert.equal(locationOf('darto', g), 'store');
+  at(g, 0, 1, 12 * 60, 'rain'); assert.equal(locationOf('darto', g), 'store', 'pemilik toko tetap jaga toko');
+  at(g, 0, 1, 12 * 60, 'rain'); assert.equal(locationOf('dewi', g), 'home_harjo');
+  at(g, 0, 1, 12 * 60); assert.equal(locationOf('dewi', g), 'plaza');
+  at(g, 0, 1, 23 * 60); assert.equal(locationOf('darto', g), 'home_darto');
+  at(g, 0, 2, 12 * 60); assert.equal(locationOf('darto', g), 'plaza', 'hari tutup: ke alun-alun');
+  at(g, 0, 5, 18 * 60); assert.equal(locationOf('darto', g), 'inn', 'Jumat malam ke kedai');
+  for (const id of Object.keys(VILLAGERS)) for (const m of [6 * 60, 12 * 60, 19 * 60, 23 * 60]) assert.ok(locationOf(id, at(g, 1, 3, m)));
+});
+
+test('persahabatan: ngobrol sekali sehari, hadiah sekali sehari, selera, level hati', () => {
+  const g = newGame('A', 1);
+  assert.equal(talk(g, 'ayu').gained, 5); assert.equal(talk(g, 'ayu').gained, 0);
+  assert.equal(friendship(g, 'ayu'), 5);
+  assert.deepEqual(giftReaction('ayu', 'dish_omelet'), { delta: 30, mood: 'love' });
+  assert.equal(giftReaction('ayu', 'egg').mood, 'like');
+  assert.equal(giftReaction('ayu', 'stone').mood, 'hate');
+  assert.equal(giftReaction('ayu', 'wood').mood, 'ok');
+  addItem(g, 'egg', 2);
+  assert.equal(gift(g, 'ayu', 'turnip').reason, 'missing');
+  assert.ok(gift(g, 'ayu', 'egg').ok); assert.equal(gift(g, 'ayu', 'egg').reason, 'already');
+  assert.equal(friendship(g, 'ayu'), 17);
+  sleep(g); assert.ok(gift(g, 'ayu', 'egg').ok); assert.equal(talk(g, 'ayu').gained, 5);
+  assert.equal(heartLevel(0), 0); assert.equal(heartLevel(50), 1); assert.equal(heartLevel(255), 4);
+  g.friend.ayu = 255; addItem(g, 'stone', 1); sleep(g); gift(g, 'ayu', 'stone'); assert.equal(friendship(g, 'ayu'), 245);
+  g.friend.ayu = 3; sleep(g); addItem(g, 'stone', 1); gift(g, 'ayu', 'stone'); assert.equal(friendship(g, 'ayu'), 0, 'tidak negatif');
+  assert.equal(hearts(g, 'ayu'), 0);
+});
+
+test('dialog: tergantung hati dan cuaca; semua warga punya teks', () => {
+  const g = newGame('A', 1);
+  for (const id of Object.keys(VILLAGERS)) { for (const w of ['sunny', 'rain']) { g.weather = w; assert.ok(talk(g, id).text.length > 5); g.talked = {}; } }
+  g.weather = 'sunny'; g.friend.lina = 160; g.talked = {};
+  assert.ok(VILLAGERS.lina.lines.high.includes(talk(g, 'lina').text));
+});
+
+test('pandai besi: butuh bijih & emas, jadi setelah 2 hari, alat lebih hemat stamina', () => {
+  const g = newGame('A', 1);
+  assert.equal(orderUpgrade(g, 'hoe'), 'ore');
+  addItem(g, 'copper', 3); g.gold = 100; assert.equal(orderUpgrade(g, 'hoe'), 'gold');
+  g.gold = 600; assert.equal(orderUpgrade(g, 'rod'), 'unsupported');
+  assert.equal(orderUpgrade(g, 'hoe'), 'ok'); assert.equal(g.gold, 100); assert.equal(countItem(g, 'copper'), 0);
+  assert.equal(orderUpgrade(g, 'axe'), 'busy');
+  assert.equal(collectUpgrade(g), 'wait'); sleep(g); assert.equal(collectUpgrade(g), 'wait'); sleep(g);
+  assert.equal(collectUpgrade(g), 'hoe'); assert.equal(toolLevel(g, 'hoe'), 1);
+  assert.equal(toolCost(g, 'hoe'), 2); assert.equal(toolCost(g, 'axe'), 4);
+  addItem(g, 'copper', 3); g.gold = 999; assert.equal(orderUpgrade(g, 'hoe'), 'max');
+  clear(g); g.stamina = 100; useTool(g, 'hoe', 0, 3); assert.equal(g.stamina, 98);
+});
+
+test('toko menjual barang berharga; semua barang beli punya harga', () => {
+  assert.ok(Object.keys(SHOPS).length === 5);
+  for (const [id, it] of Object.entries(ITEMS)) assert.ok(it.name && it.icon, id);
+  const g = newGame('A', 1);
+  assert.equal(buy(g, 'meal_soup', 1), 'ok'); assert.equal(g.gold, 150);
+});

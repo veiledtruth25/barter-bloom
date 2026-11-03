@@ -1,4 +1,5 @@
 import { CROPS, FISH, RECIPES, ITEMS, TOOLS } from './items.js';
+import { dayIndex } from './calendar.js';
 
 export const FIELD = { x0: -6, z0: 2, w: 12, h: 8 };
 export const MINE = { x0: 14, z0: -14, w: 8, h: 6 };
@@ -194,7 +195,7 @@ export function useToolOnTile(g, tool, x, z, { addItem, countItem, removeItem })
   } else {
     return { ok: false, reason: 'nothing' };
   }
-  g.stamina = Math.max(0, g.stamina - def.stamina);
+  g.stamina = Math.max(0, g.stamina - toolCost(g, tool));
   return result;
 }
 
@@ -208,3 +209,29 @@ export function harvest(g, x, z, { addItem }) {
 }
 
 export { animalsOvernight };
+
+// ---- pandai besi: tingkatkan alat dengan bijih; selesai beberapa hari kemudian -------------
+export const toolLevel = (g, tool) => g.toolLevel[tool] || 0;
+export const toolCost = (g, tool) => Math.max(1, Math.round(TOOLS[tool].stamina * (1 - 0.25 * toolLevel(g, tool))));
+export const UPGRADE = { maxLevel: 1, ore: 'copper', oreN: 3, gold: 500, days: 2, tools: ['hoe', 'water', 'sickle', 'axe', 'hammer'] };
+
+export function orderUpgrade(g, tool, { countItem, removeItem }) {
+  if (!UPGRADE.tools.includes(tool)) return 'unsupported';
+  if (g.forge) return 'busy';
+  if (toolLevel(g, tool) >= UPGRADE.maxLevel) return 'max';
+  if (countItem(g, UPGRADE.ore) < UPGRADE.oreN) return 'ore';
+  if (g.gold < UPGRADE.gold) return 'gold';
+  removeItem(g, UPGRADE.ore, UPGRADE.oreN);
+  g.gold -= UPGRADE.gold;
+  g.forge = { tool, ready: dayIndex(g.date) + UPGRADE.days };
+  return 'ok';
+}
+
+export function collectUpgrade(g) {
+  if (!g.forge) return null;
+  if (dayIndex(g.date) < g.forge.ready) return 'wait';
+  const t = g.forge.tool;
+  g.toolLevel[t] = toolLevel(g, t) + 1;
+  g.forge = null;
+  return t;
+}

@@ -3,11 +3,12 @@ import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END } from 
 import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '/core/items.js';
 import {
   newGame, advanceMinutes, sleep, fatigue, useTool, harvest, tileKey, serialize, deserialize, eat, ship, feedAnimals, collectProducts,
-  cook, buy, countItem, addItem,
+  cook, buy, countItem, addItem, gift, orderUpgrade,
 } from '/core/state.js';
-import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk } from '/core/farm.js';
-import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, makeAnimal } from './models.js';
-import { World, SPAWN, DOOR, SPOTS } from './world.js';
+import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '/core/farm.js';
+import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship } from '/core/villagers.js';
+import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, makeAnimal, makeLabel } from './models.js';
+import { World, SPAWN, DOOR, SPOTS, BUILDINGS, PLACES, doorOf } from './world.js';
 import { mesh, G } from './toon.js';
 
 const $ = (id) => document.getElementById(id);
@@ -35,6 +36,14 @@ const marker = mesh(G.box(1, 0.06, 1, 0.03), 0xfff08a, { outline: false, shadow:
 marker.material = marker.material.clone(); marker.material.transparent = true; marker.material.opacity = 0.6;
 scene.add(marker);
 
+const actors = new Map();
+for (const [id, v] of Object.entries(VILLAGERS)) {
+  const m = makeFarmer({ skin: v.skin, hair: v.hair, shirt: v.shirt, pants: v.pants, hat: v.hair });
+  if (id === 'dewi') m.scale.setScalar(0.75);
+  const l = makeLabel(v.name); l.scale.set(1.6, 0.4, 1); l.position.y = id === 'dewi' ? 2.4 : 3.1; m.add(l);
+  m.userData.offset = new THREE.Vector3(((id.charCodeAt(0) * 7) % 5 - 2) * 0.6, 0, ((id.charCodeAt(1) * 3) % 3 - 1) * 0.6);
+  m.userData.place = null; scene.add(m); actors.set(id, m);
+}
 let game = null, slot = 0, tool = 'hoe', fishing = null, animalMeshes = [], debrisMeshes = new Map(), facing = new THREE.Vector2(0, 1), busy = false, saveTimer = 0;
 const cam = { yaw: Math.PI / 4, target: Math.PI / 4, dist: 12.5, pitch: 0.95 };
 const keys = new Set();
@@ -115,6 +124,7 @@ function start(g) {
   syncAll();
   farmer.position.copy(SPAWN);
   $('menu').classList.add('hidden'); $('hud').classList.remove('hidden');
+  for (const m of actors.values()) m.userData.place = null;
   hud(); save();
 }
 
@@ -201,7 +211,8 @@ function interact() {
   const p = farmer.position;
   if (p.distanceTo(DOOR) < 2.4) return houseMenu();
   if (p.distanceTo(SPOTS.bin) < 2.6) return binMenu();
-  if (p.distanceTo(SPOTS.stall) < 2.8) return stallMenu();
+  for (const [id, m] of actors) if (m.visible && m.position.distanceTo(p) < 2.4) return villagerMenu(id);
+  for (const [id, b] of Object.entries(BUILDINGS)) if (b.shop && p.distanceTo(doorOf(b)) < 2.8) return shopMenu(id);
   if (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) return ranchMenu();
   const { x, z } = targetTile();
   if (isRipe(game.tilled[tileKey(x, z)])) {
@@ -244,15 +255,70 @@ function binMenu() {
   ], 'Dibayar besok pagi.');
 }
 
-function stallMenu() {
-  openLoop('🏪 Warung Benih', () => [
-    ...Object.entries(CROPS).map(([id, c]) => ({
-      label: `🌱 ${c.name}`, hint: `${c.seed} G · ${c.seasons.map((i) => SEASONS[i]).join('/')}`, close: false,
-      disabled: !seedSeasonOk(game, `${id}_seed`) || game.gold < c.seed,
-      fn: () => { const r = buy(game, `${id}_seed`, 1); if (r === 'full') toast('Rucksack penuh'); },
-    })),
-    { label: '🍵 Jamu (+40 stamina)', hint: '100 G', close: false, disabled: game.gold < 100, fn: () => { buy(game, 'herb', 1); } },
-  ], `Uangmu: ${game.gold} G (hanya benih musim ini)`);
+function shopStatus(id) {
+  const sh = SHOPS[id];
+  return `${formatClock(sh.open)}–${formatClock(sh.close)} · tutup hari ${sh.closed.map((d) => ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'][d]).join(', ')}`;
+}
+const buyRow = (id, label) => ({
+  label, hint: `${ITEMS[id].buy} G`, close: false, disabled: game.gold < ITEMS[id].buy,
+  fn: () => { const r = buy(game, id, 1); if (r === 'full') toast('Rucksack penuh'); },
+});
+
+function shopMenu(id) {
+  if (!isShopOpen(game, id)) return toast(`${SHOPS[id].name} tutup. ${shopStatus(id)}`);
+  const title = `🏪 ${SHOPS[id].name}`, note = () => `Uangmu: ${game.gold} G`;
+  const stock = {
+    store: () => Object.entries(CROPS).filter(([cid]) => seedSeasonOk(game, `${cid}_seed`)).map(([cid, c]) => buyRow(`${cid}_seed`, `${c.icon} Benih ${c.name}`)),
+    flower: () => [buyRow('flower', '🌹 Bunga Mawar'), buyRow('sunflower', '🌻 Bunga Matahari')],
+    clinic: () => [buyRow('herb', '🍵 Jamu (+40 stamina)')],
+    inn: () => [buyRow('meal_rice', '🍚 Nasi Hangat'), buyRow('meal_soup', '🍲 Sup Ayam'), buyRow('cake', '🍰 Kue Cokelat')],
+    smith: () => smithRows(),
+  }[id];
+  openLoop(title, stock, note());
+}
+
+function smithRows() {
+  const rows = [];
+  if (game.forge) {
+    rows.push({ label: `🔥 Dalam tempaan: ${TOOLS[game.forge.tool].name}`, hint: 'ambil bila siap', close: false, fn: () => {
+      const r = collectUpgrade(game);
+      toast(r === 'wait' ? 'Belum selesai, kembali lagi nanti.' : `${TOOLS[r].name} naik level!`);
+    } });
+  }
+  for (const t of UPGRADE.tools) {
+    const lv = toolLevel(game, t);
+    rows.push({ label: `${TOOLS[t].icon} ${TOOLS[t].name}`, hint: lv >= UPGRADE.maxLevel ? 'Tembaga ✓' : `${UPGRADE.oreN}× bijih tembaga + ${UPGRADE.gold} G`, close: false, disabled: lv >= UPGRADE.maxLevel || !!game.forge,
+      fn: () => { const r = orderUpgrade(game, t); toast({ ok: `Dipesan! Selesai ${UPGRADE.days} hari lagi.`, ore: 'Bijih tembaga kurang.', gold: 'Uang kurang.', busy: 'Masih menempa alat lain.' }[r] || '…'); } });
+  }
+  return rows;
+}
+
+// ---- warga
+function villagerMenu(id) {
+  const v = VILLAGERS[id];
+  let said = talk(game, id), lines = said.gained ? `+${said.gained} poin persahabatan` : '';
+  const title = () => `${v.name} · ${HEART_NAMES[hearts(game, id)]} ${'♥'.repeat(hearts(game, id) + 1)}`;
+  const draw = (note, rows) => showModal(title(), rows, note);
+  const main = () => draw(`“${said.text}” ${lines ? `\n(${lines})` : ''}`, [
+    { label: '🎁 Beri hadiah', close: false, fn: () => giftList() },
+    { label: `📋 ${v.role}`, disabled: true },
+  ]);
+  const giftList = () => {
+    const rows = game.rucksack.filter(Boolean).map((s) => ({ label: `${ITEMS[s.id].icon} ${ITEMS[s.id].name} ×${s.n}`, close: false,
+      fn: () => {
+        const r = gift(game, id, s.id);
+        if (!r.ok) { lines = r.reason === 'already' ? 'Kamu sudah memberi hadiah hari ini.' : '…'; return main(); }
+        said = { text: { love: 'Wah, ini favoritku! Terima kasih banyak!', like: 'Untukku? Terima kasih, aku suka!', ok: 'Terima kasih.', hate: 'Eh… aku tidak suka ini.' }[r.mood] };
+        lines = `${r.delta > 0 ? '+' : ''}${r.delta} poin`; renderRucksack(); main();
+      } }));
+    draw('Pilih hadiah', rows.length ? [...rows, { label: '↩ Kembali', close: false, fn: main }] : [{ label: 'Rucksack kosong', disabled: true }, { label: '↩ Kembali', close: false, fn: main }]);
+  };
+  main();
+}
+
+function villagersPanel() {
+  showModal('🏘️ Warga Desa', Object.entries(VILLAGERS).map(([id, v]) => ({ label: `${v.name}`, hint: `${HEART_NAMES[hearts(game, id)]} · ${friendship(game, id)}/255`, disabled: true })),
+    Object.entries(SHOPS).map(([id]) => `${SHOPS[id].name}: ${shopStatus(id)}`).join('\n'));
 }
 
 function ranchMenu() {
@@ -275,6 +341,7 @@ function goToSleep(passedOut) {
   setTimeout(() => {
     const r = sleep(game, { passedOut });
     syncAll();
+    for (const m of actors.values()) m.userData.place = null;
     if (r.income) setTimeout(() => toast(`Hasil pengiriman: +${r.income} G`), 1800);
     r.wilted?.length && setTimeout(() => toast(`${r.wilted.length} tanaman layu karena pergantian musim`), 2600);
     farmer.position.copy(passedOut ? DOOR.clone().add(new THREE.Vector3(0, 0, 1.5)) : SPAWN);
@@ -297,9 +364,24 @@ addEventListener('keydown', (e) => {
   else if (k === 'z') cam.target += Math.PI / 2;
   else if (k === 'x') cam.target -= Math.PI / 2;
   else if (k === 'i') toggleRucksack();
+  else if (k === 'v') villagersPanel();
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+function updateActors(dt) {
+  for (const [id, m] of actors) {
+    const place = locationOf(id, game), tgt = PLACES[place].clone().add(m.userData.offset);
+    if (m.userData.place === null) m.position.copy(tgt);            // muncul langsung di tempatnya
+    m.userData.place = place;
+    const d = tgt.clone().sub(m.position); d.y = 0;
+    const dist = d.length();
+    let sp = 0;
+    if (dist > 0.15) { sp = Math.min(dist / dt, id === 'dewi' ? 3.4 : 2.6); d.normalize(); m.position.addScaledVector(d, sp * dt); m.rotation.y = Math.atan2(d.x, d.z); }
+    m.visible = !(place.startsWith('home') && dist < 0.5);           // di dalam rumah
+    animateFarmer(m, dt, sp);
+  }
+}
 
 // ------------------------------------------------------------------ loop
 const clock = new THREE.Clock();
@@ -332,13 +414,15 @@ function frame() {
     animateFarmer(farmer, dt, speed);
     world.update(dt, game, farmer.position);
     updateFishing(dt);
+    world.cutaway(farmer.position, cam.yaw);
+    updateActors(dt);
     for (const m of animalMeshes) { m.userData.t += dt; m.position.x = m.userData.home.x + Math.sin(m.userData.t * 0.5) * 0.6; m.rotation.y = Math.cos(m.userData.t * 0.5); m.position.y = Math.abs(Math.sin(m.userData.t * 3)) * 0.04; }
     const t = targetTile(), tk = tileKey(t.x, t.z);
     marker.visible = (inField(t.x, t.z) || !!game.debris[tk]) && !busy;
     marker.position.set(t.x + 0.5, 0.08, t.z + 0.5);
     const p = farmer.position;
     const label = p.distanceTo(DOOR) < 2.4 ? 'E — Rumah (tidur, masak, TV)' : p.distanceTo(SPOTS.bin) < 2.6 ? 'E — Kotak Pengiriman'
-      : p.distanceTo(SPOTS.stall) < 2.8 ? 'E — Warung Benih' : (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) ? 'E — Peternakan'
+      : [...actors].some(([, m]) => m.visible && m.position.distanceTo(p) < 2.4) ? 'E — Bicara' : Object.values(BUILDINGS).some((b) => b.shop && p.distanceTo(doorOf(b)) < 2.8) ? 'E — Masuk toko' : (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) ? 'E — Peternakan'
       : isRipe(game.tilled[tk]) ? 'E — Panen' : fishing ? (fishing.bite ? '❗ Spasi sekarang!' : '🎣 Menunggu…') : (tool === 'rod' && nearPond()) ? 'Spasi — Lempar pancing' : '';
     $('prompt').classList.toggle('hidden', !label || modalOpen);
     $('prompt').textContent = label;
@@ -355,4 +439,4 @@ $('toolBtn').onclick = () => { tool = TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) 
 $('bagBtn').onclick = () => toggleRucksack();
 menu();
 frame();
-window.__bb = { get game() { return game; }, farmer, cam, syncAll };
+window.__bb = { get game() { return game; }, farmer, cam, syncAll, actors };

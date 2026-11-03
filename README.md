@@ -23,13 +23,14 @@ Docker: `docker compose up -d --build` (container `barterbloom`, port internal 3
 | E | Interaksi: panen, rumah (tidur/masak/TV), kotak pengiriman, warung, peternakan |
 | Q | Ganti alat |
 | Z / X | Putar kamera 90° |
+| V | Daftar warga, tingkat hati, jam buka toko |
 | I | Rucksack · Esc: menu & simpan |
 
 ## Status rombakan (branch `hmbtn-rewrite`)
 
 - [x] **Tahap 1** — inti single player: kalender 4×30 hari (Senin–Minggu), cuaca + ramalan TV, stamina & kelelahan, rucksack 9 slot, save 3 slot, kamera sudut tetap, render toon/outline, cangkul & penyiram.
 - [x] **Tahap 2** — 9 tanaman 3 musim (layu saat musim berganti, tanaman berulang), gulma/batu/tunggul dengan alat yang tepat, kotak pengiriman (dibayar besok), warung benih, ayam & sapi (pakan, elus, telur/susu), tambang (batu & bijih tembaga muncul ulang tiap hari), memancing (lempar → tunggu ❗ → Spasi), memasak di dapur rumah
-- [ ] Tahap 3 — kota, warga, jadwal harian
+- [x] **Tahap 3** — kota (jalan, alun-alun, sumur, 5 toko, 6 rumah), 8 warga dengan jadwal harian (toko buka/tutup per jam & hari, hujan = di rumah), ngobrol & hadiah sekali sehari, selera hadiah, tingkat hati ungu→merah, pandai besi (tingkatkan alat dengan bijih tembaga), toko benih/bunga/klinik/kedai, cutaway bangunan
 - [ ] Tahap 4 — mesin event, festival, heart event
 - [ ] Tahap 5 — pernikahan, anak, ending
 - [ ] Tahap 6 — perapian & tes
@@ -37,7 +38,7 @@ Docker: `docker compose up -d --build` (container `barterbloom`, port internal 3
 ## Struktur
 
 ```
-core/      logika murni tanpa DOM/Three (kalender, cuaca, state, barang) — dites dengan node --test
+core/      villagers.js (warga, jadwal, toko, hati), farm.js, state.js, calendar.js, items.js — logika murni tanpa DOM/Three (kalender, cuaca, state, barang) — dites dengan node --test
 client/js/ toon.js (material toon+outline, loader GLB), models.js, world.js, main.js
 server/    Express statis
 ```

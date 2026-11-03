@@ -1,10 +1,11 @@
 import { DAY_START, DAY_END, PASS_OUT, nextDate, weatherFor, weekday } from './calendar.js';
 import { ITEMS } from './items.js';
 import * as farm from './farm.js';
+import * as vil from './villagers.js';
 
 export { tileKey } from './farm.js';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const RUCKSACK_SLOTS = 9;
 export const MAX_STAMINA = 100;
 export const STACK = 9;
@@ -21,6 +22,8 @@ export function newGame(name = 'Petani', seed = (Math.random() * 1e9) | 0) {
     debris: {},   // "x,z" -> weed | rock | copper | stump
     bin: {},      // kotak pengiriman: id -> jumlah
     animals: [],
+    friend: {}, talked: {}, gifted: {},   // persahabatan warga (poin 0-255), reset harian
+    toolLevel: {}, forge: null,
     flags: {},
   };
   farm.initWorld(g);
@@ -45,6 +48,7 @@ export function sleep(g, { passedOut = false } = {}) {
   g.weather = g.forecast;
   g.forecast = weatherFor(nextDate(g.date), g.seed);
   g.stamina = Math.min(g.maxStamina, Math.round(g.maxStamina * recover));
+  g.talked = {}; g.gifted = {};
   const income = farm.payShipments(g);
   farm.animalsOvernight(g);
   // tanaman tumbuh berdasarkan penyiraman kemarin; baru setelah itu tanah mengering (kecuali hujan)
@@ -110,6 +114,8 @@ export const feedAnimals = (g) => farm.feedAnimals(g, bag);
 export const collectProducts = (g) => farm.collectProducts(g, bag);
 export const cook = (g, id) => farm.cook(g, id, bag);
 export const buy = (g, id, n = 1) => farm.buy(g, id, n, bag);
+export const orderUpgrade = (g, tool) => farm.orderUpgrade(g, tool, bag);
+export const gift = (g, id, item) => vil.gift(g, id, item, bag);
 
 // ---- simpan ----------------------------------------------------------------
 export function serialize(g) {

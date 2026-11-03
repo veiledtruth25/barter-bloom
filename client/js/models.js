@@ -161,3 +161,37 @@ export function makeAnimal(type) {
   }
   return g;
 }
+
+// ---------------------------------------------------------------- tahap 3
+export function makeBuilding(wall, roof, w = 5, d = 4) {
+  const g = new THREE.Group();
+  const walls = mesh(G.box(w, 2.8, d, 0.18), wall); walls.position.y = 1.4; g.add(walls);
+  const r = mesh(G.cone(Math.max(w, d) * 0.78, 2.0), roof); r.rotation.y = Math.PI / 4; r.scale.set(w / Math.max(w, d) * 1.15, 1, d / Math.max(w, d) * 1.15); r.position.y = 3.75; g.add(r);
+  const door = mesh(G.box(0.9, 1.7, 0.2, 0.08), 0x8a5a33); door.position.set(0, 0.85, d / 2 + 0.02); g.add(door);
+  for (const s of [-1, 1]) { const win = mesh(G.box(0.8, 0.8, 0.2, 0.08), 0xbfe6ff); win.position.set(s * w * 0.3, 1.7, d / 2 + 0.02); g.add(win); }
+  // material sendiri supaya bisa dibuat transparan tanpa memengaruhi benda lain berwarna sama
+  g.userData.fade = [walls, r, door];
+  for (const part of g.userData.fade) part.material = part.material.clone();
+  return g;
+}
+
+export function fadeBuilding(g, on) {
+  if (g.userData.faded === on) return;
+  g.userData.faded = on;
+  for (const part of g.userData.fade) {
+    part.material.transparent = on; part.material.opacity = on ? 0.22 : 1; part.material.depthWrite = !on; part.castShadow = !on;
+    part.children.forEach((c) => { c.visible = !on; });
+  }
+}
+
+export function makeLabel(text, color = '#3a2a1c') {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff8e6'; x.strokeStyle = '#3a2a1c'; x.lineWidth = 8;
+  x.beginPath(); x.roundRect(8, 8, 496, 112, 30); x.fill(); x.stroke();
+  x.fillStyle = color; x.font = '700 54px Fredoka, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 256, 68);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  s.scale.set(2.6, 0.65, 1); s.renderOrder = 10;
+  return s;
+}

@@ -57,3 +57,11 @@ for (const [id, c] of Object.entries(CROPS)) {
   ITEMS[`${id}_seed`] = { name: `Benih ${c.name}`, icon: '🌱', sell: 0, buy: c.seed };
 }
 for (const [id, f] of Object.entries(FISH)) ITEMS[id] = { name: f.name, icon: f.icon, sell: f.sell, stamina: id === 'boot' ? 0 : 10 };
+
+Object.assign(ITEMS, {
+  flower:    { name: 'Bunga Mawar',   icon: '🌹', sell: 40,  buy: 60 },
+  sunflower: { name: 'Bunga Matahari', icon: '🌻', sell: 40, buy: 60 },
+  meal_rice: { name: 'Nasi Hangat',   icon: '🍚', sell: 0, buy: 80,  stamina: 30 },
+  meal_soup: { name: 'Sup Ayam',      icon: '🍲', sell: 0, buy: 150, stamina: 60 },
+  cake:      { name: 'Kue Cokelat',   icon: '🍰', sell: 0, buy: 300, stamina: 40 },
+});

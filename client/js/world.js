@@ -1,14 +1,32 @@
 import * as THREE from 'three';
 import { mesh, G } from './toon.js';
-import { makeTree, makeHouse, makeFence, makeBin, makeStall, makeBarn } from './models.js';
+import { makeTree, makeHouse, makeFence, makeBin, makeBarn, makeBuilding, makeLabel, fadeBuilding } from './models.js';
 import { FIELD, MINE } from '/core/farm.js';
 
 export { FIELD };
 export const SPAWN = new THREE.Vector3(0, 0, 5);
 export const DOOR = new THREE.Vector3(0, 0, -3.2);
+// Gedung kota: pusat (x,z), pintu menghadap +z. Titik pintu = (x, z + d/2 + 0.9).
+export const BUILDINGS = {
+  store:  { name: 'Toko Serba Ada', x: -11, z: 27, wall: 0xf7e1b5, roof: 0x3fa86b, shop: true },
+  smith:  { name: 'Pandai Besi',    x: 11,  z: 27, wall: 0xcfc6bd, roof: 0x6b6b7a, shop: true },
+  inn:    { name: 'Kedai Sari',     x: -11, z: 38, wall: 0xffd9c2, roof: 0xe8745a, shop: true },
+  clinic: { name: 'Klinik',         x: 11,  z: 38, wall: 0xf4f9ff, roof: 0x4aa3df, shop: true },
+  flower: { name: 'Toko Bunga',     x: 0,   z: 41, wall: 0xffe3f0, roof: 0xd96aa8, shop: true },
+  home_darto: { name: 'Rumah Darto', x: -23, z: 27, wall: 0xf3e2c0, roof: 0xa8552f },
+  home_bejo:  { name: 'Rumah Bejo',  x: 23,  z: 27, wall: 0xe8dccb, roof: 0x7a4a3a },
+  home_lina:  { name: 'Rumah Lina',  x: -23, z: 38, wall: 0xffeef5, roof: 0xb48cf0 },
+  home_raka:  { name: 'Rumah Raka',  x: 23,  z: 38, wall: 0xeaf2f7, roof: 0x3a5a8a },
+  home_maya:  { name: 'Rumah Maya',  x: -20, z: 15, wall: 0xf7e8c8, roof: 0x5ab0d8 },
+  home_harjo: { name: 'Rumah Kakek', x: 0,   z: 52, wall: 0xe9dfc0, roof: 0x9a7a3a },
+};
+export const doorOf = (b) => new THREE.Vector3(b.x, 0, b.z + 3.0);
+export const PLACES = {
+  ...Object.fromEntries(Object.entries(BUILDINGS).map(([k, b]) => [k, doorOf(b)])),
+  plaza: new THREE.Vector3(0, 0, 33), farm_road: new THREE.Vector3(0, 0, 17),
+};
 export const SPOTS = {
   bin: new THREE.Vector3(4.5, 0, -2.2),
-  stall: new THREE.Vector3(9, 0, 0),
   barn: new THREE.Vector3(-11, 0, -2),
   pond: new THREE.Vector3(14, 0, 4),
 };
@@ -33,7 +51,7 @@ export class World {
     this.hemi = new THREE.HemisphereLight(0xcfe8ff, 0x9a8a6a, 1.6);
     scene.add(this.sun, this.sun.target, this.hemi);
 
-    this.ground = mesh(new THREE.CircleGeometry(60, 64), GROUND[0], { outline: false, shadow: false });
+    this.ground = mesh(new THREE.CircleGeometry(75, 64), GROUND[0], { outline: false, shadow: false });
     this.ground.rotation.x = -Math.PI / 2;
     scene.add(this.ground);
 
@@ -45,7 +63,6 @@ export class World {
 
     const add = (m, v, r) => { m.position.copy(v); this.scene.add(m); this.colliders.push({ x: v.x, z: v.z, r }); };
     add(makeBin(), SPOTS.bin, 1);
-    add(makeStall(), SPOTS.stall, 1.4);
     add(makeBarn(), SPOTS.barn, 2.6);
     const floor = mesh(G.box(MINE.w, 0.08, MINE.h, 0.03), 0x7d7487, { outline: false, shadow: false });
     floor.position.set(MINE.x0 + MINE.w / 2, 0.04, MINE.z0 + MINE.h / 2); scene.add(floor);
@@ -59,7 +76,7 @@ export class World {
     for (let i = 0; i < 46; i++) {
       const a = r() * Math.PI * 2, d = 15 + r() * 30;
       const x = Math.cos(a) * d + 2, z = Math.sin(a) * d + 4;
-      if (Math.hypot(x - 14, z - 4) < 6) continue;
+      if (Math.hypot(x - 14, z - 4) < 6 || (z > 10 && z < 60 && Math.abs(x) < 34)) continue;
       this.treeSpots.push([x, z]);
       this.colliders.push({ x, z, r: 0.6 });
     }
@@ -67,10 +84,20 @@ export class World {
     for (let i = 0; i < 90; i++) {
       const a = r() * Math.PI * 2, d = 4 + r() * 38;
       const x = Math.cos(a) * d, z = Math.sin(a) * d + 4;
-      if (z > 0 && z < 12 && x > -8 && x < 8) continue;
+      if ((z > 0 && z < 12 && x > -8 && x < 8) || (z > 10 && z < 60 && Math.abs(x) < 34)) continue;
       const f = mesh(G.sphere(0.12, 8, 6), [0xff7aa8, 0xffe14d, 0xffffff, 0xb28dff][i % 4], { outline: false, shadow: false });
       f.position.set(x, 0.12, z); this.decor.add(f);
     }
+    this.labels = []; this.buildings = [];
+    for (const b of Object.values(BUILDINGS)) {
+      const m = makeBuilding(b.wall, b.roof); m.position.set(b.x, 0, b.z); scene.add(m); this.buildings.push({ m, b });
+      this.colliders.push({ x: b.x, z: b.z, r: 2.9 });
+      const l = makeLabel(b.name); l.position.set(b.x, 5.6, b.z + 1); scene.add(l); this.labels.push(l);
+    }
+    const road = mesh(G.box(3.2, 0.06, 16, 0.02), 0xd9c79a, { outline: false, shadow: false }); road.position.set(0, 0.03, 18); scene.add(road);
+    const plaza = mesh(G.cyl(8, 8, 0.06), 0xe3d3a8, { outline: false, shadow: false }); plaza.position.set(0, 0.03, 33); scene.add(plaza);
+    const well = mesh(G.cyl(0.9, 0.9, 0.7), 0xa7a7b2); well.position.set(0, 0.35, 33); scene.add(well);
+    this.colliders.push({ x: 0, z: 33, r: 1 });
     this.rain = this._makeRain(); scene.add(this.rain);
     this.setSeason(0);
   }
@@ -92,6 +119,16 @@ export class World {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfe3ff, size: 0.12, transparent: true, opacity: 0.8 }));
     p.visible = false; p.frustumCulled = false; return p;
+  }
+
+  // Bangunan yang berada di antara kamera dan pemain dibuat transparan (cutaway).
+  cutaway(focus, yaw) {
+    const cx = Math.sin(yaw), cz = Math.cos(yaw);
+    for (const { m, b } of this.buildings) {
+      const dx = b.x - focus.x, dz = b.z - focus.z;
+      const along = dx * cx + dz * cz, side = Math.abs(dx * cz - dz * cx);
+      fadeBuilding(m, along > -1 && along < 16 && side < 5.5);
+    }
   }
 
   update(dt, g, focus) {
@@ -132,6 +169,6 @@ export class World {
       const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), min = c.r + radius;
       if (d < min && d > 1e-4) { p.x = c.x + (dx / d) * min; p.z = c.z + (dz / d) * min; }
     }
-    p.x = Math.max(-55, Math.min(55, p.x)); p.z = Math.max(-55, Math.min(55, p.z));
+    p.x = Math.max(-55, Math.min(55, p.x)); p.z = Math.max(-55, Math.min(62, p.z));
   }
 }
