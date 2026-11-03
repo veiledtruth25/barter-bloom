@@ -26,7 +26,7 @@ npm run smoke        # smoke test browser (butuh Playwright; BASE=http://localho
 |---|---|
 | W A S D / panah | Jalan 4 arah mengikuti kotak (Shift = lari) |
 | Spasi | Pakai alat di petak tepat di depan karakter (pancing: lempar & tarik); lanjut dialog |
-| E | Interaksi: panen, rumah, kotak pengiriman, toko, warga, hewan, anjing, anak |
+| E | Interaksi: panen, kotak pengiriman, toko, warga, hewan, anjing, anak; di dalam rumah: tempat tidur, TV, dapur, rak buku (simpan), kalender, peti |
 | Q | Ganti alat |
 | I · V · M | Rucksack · Warga & Rapor Desa · Suara on/off |
 | Esc | Tutup menu / menu utama (menyimpan) |
@@ -40,6 +40,8 @@ npm run smoke        # smoke test browser (butuh Playwright; BASE=http://localho
 **Event** — 7 festival (Bunga, Memasak, Ternak, Kembang Api, Panen, Malam Bintang, Tahun Baru; cerah, toko tutup, warga ke alun-alun) dan 10 heart event berpilihan, dimainkan lewat mesin event berbasis generator.
 
 **Keluarga** — 5 calon pasangan, lamaran dengan Bulu Biru, pernikahan, pasangan membantu di ladang, anak yang tumbuh, anjing, rapor & ending di awal tahun ke-3 (game bisa dilanjutkan).
+
+**Adegan rumah** — masuk lewat pintu rumah (↑ atau E) pindah ke interior seperti HM:BTN: kamera miring dari sudut ruangan, lantai papan kayu, rak buku (simpan), TV (ramalan cuaca), tempat tidur, kalender festival, peti perkakas, dan dapur (setelah rumah diperbesar). Keluar lewat keset pintu.
 
 **Visual** — kamera perspektif tetap, karakter chibi 4 arah, bayangan lembut, siklus siang/malam, hujan/salju, efek suara sintetis. Semua sprite digambar prosedural di `client/js/render.js` sehingga mudah diganti dengan gambar sendiri.
 

@@ -2,6 +2,7 @@ import { CROPS, TOOLS } from '../core/items.js';
 import { MINE, STRUCTURES, POND, FENCE, SPOTS } from './world.js';
 import { festivalOn } from '../core/calendar.js';
 import { Vec } from './vec.js';
+import { drawInterior, CAMERA } from './interior.js';
 
 const OUT = '#3a2a1c';
 export const DIRV = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
@@ -243,23 +244,42 @@ export class Renderer {
 
   // Kamera tetap miring (sudut tidak berubah, tidak bisa diputar). Tanah diproyeksikan dengan perspektif;
   // karakter & benda berdiri tegak menghadap layar dan mengecil menurut jarak, seperti HM:BTN.
-  _project() {
-    const { W, H, T } = this, L = 15, th = (52 * Math.PI) / 180, sv = Math.sin(th), cv = Math.cos(th);
-    const camY = L * sv, camZ = this.cam.z + L * cv, cx = this.cam.x, f = T * L;
+  // `psi` memutar arah pandang (dipakai adegan interior: kamera di sudut ruangan, dua dinding terlihat).
+  _project(tx, tz, L, th, psi, T) {
+    const { W, H } = this, sv = Math.sin(th), cv = Math.cos(th), sp = Math.sin(psi), cp = Math.cos(psi);
+    const camX = tx + sp * L * cv, camY = L * sv, camZ = tz + cp * L * cv, f = T * L;
     return (x, z, y = 0) => {
-      const rx = x - cx, ry = y - camY, rz = z - camZ;
-      const zc = -ry * sv - rz * cv, yc = ry * cv - rz * sv, s = f / Math.max(zc, 0.5);
-      return [W / 2 + rx * s, H / 2 - yc * s, s];
+      const dx = x - camX, dy = y - camY, dz = z - camZ;
+      const xc = dx * cp - dz * sp, yc = -dx * sp * sv + dy * cv - dz * cp * sv, zc = -dx * sp * cv - dy * sv - dz * cp * cv;
+      const s = f / Math.max(zc, 0.5);
+      return [W / 2 + xc * s, H / 2 - yc * s, s];
     };
   }
 
+  // Adegan di dalam rumah: ruangan tetap di layar, kamera dekat dari sudut ruangan.
+  drawHouse(dt, S) {
+    const { c, W, H } = this, g = S.game;
+    this.time += dt;
+    const Ti = Math.max(40, Math.min(92, H / 10)), [tx, tz] = CAMERA.target;
+    const P = this._project(tx, tz, CAMERA.dist, CAMERA.pitch, CAMERA.yaw, Ti);
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.fillStyle = '#0e0905'; c.fillRect(0, 0, W, H);
+    const ents = [S.farmer, ...S.inside].filter((e) => e.visible !== false).map((e) => ({ x: e.position.x, z: e.position.z, fn: () => { const [sx, sy, s] = P(e.position.x, e.position.z); drawPerson(c, sx, sy, s, e); } }));
+    drawInterior(c, P, g, ents, this.time, Math.max(1.6, Ti * 0.04));
+    const d = this._dark(g.minute);
+    c.fillStyle = `rgba(30,18,6,${0.04 + d * 0.38})`; c.fillRect(0, 0, W, H);
+    const vg = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)');
+    c.fillStyle = vg; c.fillRect(0, 0, W, H);
+  }
+
   draw(dt, S) {
+    if (S.scene === 'house') return this.drawHouse(dt, S);
     const { c, W, H, T } = this, g = S.game;
     this.time += dt;
     const f = S.farmer.position, k = Math.min(1, dt * 9);
     this.cam.x += (f.x - this.cam.x) * k; this.cam.z += (f.z - this.cam.z) * k;
     this.cam.x = Math.max(-50, Math.min(50, this.cam.x)); this.cam.z = Math.max(-45, Math.min(55, this.cam.z));
-    const P = this._project(), cx = this.cam.x, cz = this.cam.z;
+    const P = this._project(this.cam.x, this.cam.z, 15, (52 * Math.PI) / 180, 0, T), cx = this.cam.x, cz = this.cam.z;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const season = g.date.season;
     const PAL = [['#7bd356', '#72cc50', '#83da5c', '#6cc44b'], ['#5fcf4a', '#58c444', '#68d652', '#52bb3f'], ['#c9a23c', '#bf9a37', '#d3ab45', '#b8922f'], ['#eef4fa', '#e4ecf4', '#f6fafd', '#dbe5ee']][season];

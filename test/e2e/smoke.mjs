@@ -38,8 +38,12 @@ await click('.modal', 'Benih Lobak');
 check(await state(() => __bb.game.gold) < 300, 'beli benih di toko (buka)');
 await press('Escape');
 
-// tidur → hari berganti → tawaran anjing
-await tp(0, -1.5); await press('e', 500); await click('.modal', 'Tidur');
+// masuk rumah lewat pintu (adegan interior) → tidur di tempat tidur → hari berganti → tawaran anjing
+await tp(0, -3.3); await page.keyboard.down('w'); await page.waitForTimeout(600); await page.keyboard.up('w');
+await page.waitForFunction(() => __bb.scene === 'house', null, { timeout: 15000 });
+check(true, 'masuk rumah: adegan interior');
+await page.waitForTimeout(1200);
+await tp(2.5, 5.4); await press('e', 500); await click('.modal', 'Tidur');
 await page.waitForSelector('#dialog:not(.hidden)', { timeout: 60000 });
 await click('#dialog', 'Lanjut'); await click('#dialog', 'Pochi'); await click('#dialog', 'Lanjut'); await click('#dialog', 'Lanjut');
 await page.waitForTimeout(600);
