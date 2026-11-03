@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END, FESTIVAL_DAYS, festivalOn } from '/core/calendar.js';
 import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '/core/items.js';
 import {
@@ -7,10 +6,9 @@ import {
 } from '/core/state.js';
 import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk, toolLevel, collectUpgrade, UPGRADE } from '/core/farm.js';
 import { VILLAGERS, SHOPS, HEART_NAMES, isShopOpen, locationOf, talk, hearts, friendship, PLACE_IDS } from '/core/villagers.js';
-import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, makeAnimal, makeLabel, makeDog } from './models.js';
+import { Vec } from './vec.js';
 import { World, SPAWN, DOOR, SPOTS, BUILDINGS, PLACES, doorOf } from './world.js';
-import { mesh, G } from './toon.js';
-import { Fireworks } from './fx.js';
+import { Renderer, makeEntity, animatePerson, swingTool, DIRV, dirOf, hex } from './render.js';
 import { play, toggleMute } from './sfx.js';
 
 const $ = (id) => document.getElementById(id);
@@ -21,39 +19,25 @@ const SEASON_ICON = ['🌸', '☀️', '🍂', '❄️'];
 const FACE = { fit: '😄', tired: '🙂', exhausted: '😫', collapse: '😵' };
 
 const canvas = $('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
-const world = new World(scene);
-const farmer = makeFarmer();
+const renderer = new Renderer(canvas);
+const world = new World();
+const farmer = makeEntity({ skin: '#ffd2b0', hair: '#5a3a22', shirt: '#4aa3df', pants: '#3b4a78', hat: '#e8c14a' });
 farmer.position.copy(SPAWN);
-scene.add(farmer);
-const tiles = new Map();
-const marker = mesh(G.box(1, 0.06, 1, 0.03), 0xfff08a, { outline: false, shadow: false });
-marker.material = marker.material.clone(); marker.material.transparent = true; marker.material.opacity = 0.6;
-scene.add(marker);
 
 for (const id of PLACE_IDS) if (!PLACES[id]) console.error('tempat tanpa koordinat:', id);
-const fireworks = new Fireworks(scene);
 let eventRun = null, eventResolve = null;
 const actors = new Map();
 for (const [id, v] of Object.entries(VILLAGERS)) {
-  const m = makeFarmer({ skin: v.skin, hair: v.hair, shirt: v.shirt, pants: v.pants, hat: v.hair });
-  if (id === 'dewi') m.scale.setScalar(0.75);
-  const l = makeLabel(v.name); l.scale.set(1.6, 0.4, 1); l.position.y = id === 'dewi' ? 2.4 : 3.1; m.add(l);
-  m.userData.offset = new THREE.Vector3(((id.charCodeAt(0) * 7) % 5 - 2) * 0.6, 0, ((id.charCodeAt(1) * 3) % 3 - 1) * 0.6);
-  m.userData.place = null; scene.add(m); actors.set(id, m);
+  const m = makeEntity({ skin: hex(v.skin), hair: hex(v.hair), shirt: hex(v.shirt), pants: hex(v.pants), hat: null }, id === 'dewi' ? 0.75 : 1);
+  m.name = v.name;
+  m.userData.offset = new Vec(((id.charCodeAt(0) * 7) % 5 - 2) * 0.6, 0, ((id.charCodeAt(1) * 3) % 3 - 1) * 0.6);
+  m.userData.place = null; actors.set(id, m);
 }
-const dog = makeDog(); dog.visible = false; scene.add(dog);
-const kid = makeFarmer({ skin: 0xffd2b0, hair: 0x5a3a22, shirt: 0xff8ab0, pants: 0x6a8ad8, hat: 0xffd24a }); kid.visible = false; scene.add(kid);
-let game = null, slot = 0, tool = 'hoe', fishing = null, animalMeshes = [], debrisMeshes = new Map(), facing = new THREE.Vector2(0, 1), busy = false, saveTimer = 0;
-const cam = { yaw: Math.PI / 4, target: Math.PI / 4, dist: 12.5, pitch: 0.95 };
+const dog = makeEntity(); dog.visible = false;
+const kid = makeEntity({ skin: '#ffd2b0', hair: '#5a3a22', shirt: '#ff8ab0', pants: '#6a8ad8', hat: null }); kid.visible = false;
+let game = null, slot = 0, tool = 'hoe', fishing = null, animalMeshes = [], busy = false, saveTimer = 0;
 const keys = new Set();
+const cam = renderer.cam;
 
 // ------------------------------------------------------------------ UI
 function toast(msg) {
@@ -64,8 +48,10 @@ function toast(msg) {
 
 function hud() {
   const g = game;
-  $('dateText').textContent = `${SEASONS[g.date.season]} ${g.date.day} · ${weekday(g.date)}`;
-  $('clockText').textContent = formatClock(g.minute);
+  const hh = Math.floor(g.minute / 60) % 24, mm = String(Math.floor(g.minute % 60)).padStart(2, '0');
+  $('dateText').textContent = `${g.date.day} ${weekday(g.date).slice(0, 3)}`;
+  $('clockText').textContent = `${hh < 12 ? 'AM' : 'PM'} ${hh % 12 || 12}:${mm}`;
+  $('seasonName').textContent = `${SEASONS[g.date.season]}, Thn ${g.date.year}`;
   $('seasonIcon').textContent = SEASON_ICON[g.date.season];
   $('weatherText').textContent = `${WEATHER_ICON[g.weather]} ${WEATHER_NAME[g.weather]}`;
   const fid = festivalOn(g.date), fest = fid && FESTIVAL_DAYS[fid];
@@ -186,7 +172,6 @@ function save() {
 
 function start(g) {
   game = g; busy = false;
-  for (const t of tiles.values()) scene.remove(t); tiles.clear();
   syncAll();
   farmer.position.copy(SPAWN);
   $('menu').classList.add('hidden'); $('hud').classList.remove('hidden');
@@ -195,32 +180,19 @@ function start(g) {
 }
 
 // ---------------------------------------------------------------- ladang
-function syncTile(x, z) {
-  const k = tileKey(x, z), d = game.tilled[k];
-  if (tiles.get(k)) { scene.remove(tiles.get(k)); tiles.delete(k); }
-  if (d) {
-    const t = makeTile(true, d.watered); t.position.set(x + 0.5, 0.04, z + 0.5);
-    if (d.crop) t.add(makeCrop(d.crop.id, d.crop.age, CROPS[d.crop.id].days));
-    scene.add(t); tiles.set(k, t);
-  }
-  if (debrisMeshes.get(k)) { scene.remove(debrisMeshes.get(k)); debrisMeshes.delete(k); }
-  if (game.debris[k]) { const m = makeDebris(game.debris[k]); m.position.set(x + 0.5, 0, z + 0.5); scene.add(m); debrisMeshes.set(k, m); }
-}
-function syncAll() {
-  for (const m of debrisMeshes.values()) scene.remove(m); debrisMeshes.clear();
-  for (const k of new Set([...Object.keys(game.tilled), ...Object.keys(game.debris), ...tiles.keys()])) syncTile(...k.split(',').map(Number));
-  syncAnimals();
-}
+// Tanah, tanaman, dan puing digambar langsung dari state game tiap frame; hanya hewan yang punya entitas sendiri.
+const syncTile = () => {};
+function syncAll() { syncAnimals(); }
 function syncAnimals() {
-  animalMeshes.forEach((m) => scene.remove(m)); animalMeshes = [];
-  game.animals.forEach((a, i) => {
-    const m = makeAnimal(a.type);
-    m.userData.home = { x: SPOTS.barn.x + 3.2 + (i % 4) * 1.4 * (a.type === 'cow' ? 1.6 : 1), z: SPOTS.barn.z + (a.type === 'cow' ? 2.6 : 0.5) + Math.floor(i / 4) };
+  animalMeshes = game.animals.map((a, i) => {
+    const m = makeEntity(); m.type = a.type;
+    m.userData.home = { x: SPOTS.barn.x + 3.2 + (i % 4) * 1.4 * (a.type === 'cow' ? 1.6 : 1), z: SPOTS.barn.z + (a.type === 'cow' ? 2.6 : 0.8) + Math.floor(i / 4) };
     m.position.set(m.userData.home.x, 0, m.userData.home.z); m.userData.t = Math.random() * 10;
-    scene.add(m); animalMeshes.push(m);
+    return m;
   });
 }
-const targetTile = () => ({ x: Math.floor(farmer.position.x + facing.x * 0.9), z: Math.floor(farmer.position.z + facing.y * 0.9) });
+// Petak tepat di depan karakter (menghadap 4 arah, seperti game klasik).
+const targetTile = () => { const [dx, dz] = DIRV[farmer.dir]; return { x: Math.floor(farmer.position.x + dx), z: Math.floor(farmer.position.z + dz) }; };
 
 const REASONS = {
   already: 'Tanah ini sudah digarap.', notilled: 'Garap dulu dengan cangkul.', nothing: 'Alat ini tidak berguna di sini.', tired: 'Terlalu lelah.',
@@ -235,7 +207,7 @@ function action() {
   if (tool === 'rod') return castRod();
   if (game.stamina <= 0) return toast('Kamu terlalu lelah… cari makanan atau tidur.');
   const { x, z } = targetTile();
-  swingTool(farmer);
+  farmer.tool = tool; swingTool(farmer);
   const r = useTool(game, tool, x, z);
   if (r.ok) {
     syncTile(x, z); hud(); advanceMinutes(game, 2);
@@ -260,7 +232,7 @@ function castRod() {
   }
   if (!nearPond()) return toast('Pancing hanya bisa dipakai di tepi kolam.');
   if (game.stamina <= 0) return toast('Kamu terlalu lelah…');
-  swingTool(farmer);
+  farmer.tool = 'rod'; swingTool(farmer);
   fishing = { t: 1.5 + Math.random() * 3, bite: false, hold: 0 };
   toast('Umpan dilempar…');
 }
@@ -440,7 +412,7 @@ function goToSleep(passedOut) {
     for (const m of actors.values()) m.userData.place = null;
     if (r.income) setTimeout(() => toast(`Hasil pengiriman: +${r.income} G`), 1800);
     r.wilted?.length && setTimeout(() => toast(`${r.wilted.length} tanaman layu karena pergantian musim`), 2600);
-    farmer.position.copy(passedOut ? DOOR.clone().add(new THREE.Vector3(0, 0, 1.5)) : SPAWN);
+    farmer.position.copy(passedOut ? DOOR.clone().add(new Vec(0, 0, 1.5)) : SPAWN);
     save(); hud();
     $('fadeText').textContent = `${SEASONS[game.date.season]} ${game.date.day} · ${r.weekday}`;
     setTimeout(() => { $('fade').classList.remove('on'); busy = false; toast(`Hari baru! Cuaca: ${WEATHER_NAME[game.weather]}`); if (r.family?.chores) setTimeout(() => toast(`💞 Pasanganmu menyiram ${r.family.chores} tanaman dan menyiapkan bekal`), 900); setTimeout(drainQueue, 1600); }, 1400);
@@ -451,6 +423,7 @@ function goToSleep(passedOut) {
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase(); keys.add(k);
+  if (KEYDIR[k] && !dirStack.includes(k)) dirStack.push(k);
   if (!game) return;
   if (eventResolve && (k === ' ' || k === 'e' || k === 'enter')) { e.preventDefault(); return eventResolve(); }
   if (eventRun) return;
@@ -459,31 +432,29 @@ addEventListener('keydown', (e) => {
   else if (k === 'e') interact();
   else if (modalOpen) return;
   else if (k === 'q') { tool = TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) % TOOL_ORDER.length]; hud(); }
-  else if (k === 'z') cam.target += Math.PI / 2;
-  else if (k === 'x') cam.target -= Math.PI / 2;
   else if (k === 'i') toggleRucksack();
   else if (k === 'v') villagersPanel();
   else if (k === 'm') toast(toggleMute() ? '🔇 Suara dimatikan' : '🔊 Suara menyala');
 });
-addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+addEventListener('keyup', (e) => { const k = e.key.toLowerCase(); keys.delete(k); const i = dirStack.indexOf(k); if (i >= 0) dirStack.splice(i, 1); });
+addEventListener('resize', () => renderer.resize());
 
 function updateFamily(dt, time) {
   const yard = PLACES.farm_yard;
   dog.visible = !!game.dog;
   if (game.dog) {
     const a = time * 0.6;
-    dog.position.set(yard.x + 1.8 + Math.cos(a) * 1.6, 0, yard.z + 1.5 + Math.sin(a * 1.3) * 1.2);
-    dog.rotation.y = Math.atan2(-Math.sin(a) * 1.6, Math.cos(a * 1.3) * 1.56);
-    dog.position.y = Math.abs(Math.sin(time * 6)) * 0.05; dog.userData.tail.rotation.z = Math.sin(time * 14) * 0.5;
+    dog.position.set(SPOTS.doghouse.x - 0.6 + Math.cos(a) * 1.4, 0, SPOTS.doghouse.z + 1.6 + Math.sin(a * 1.3) * 0.9);
+    dog.dir = -Math.sin(a) < 0 ? 'left' : 'right'; dog.userData.t = time;
   }
   const stage = childStage(game);
   kid.visible = !!stage && !(game.minute < 7 * 60 || game.minute > 20 * 60) && game.weather !== 'rain';
   if (stage) {
-    kid.scale.setScalar(stage === 'baby' ? 0.32 : stage === 'toddler' ? 0.5 : 0.7);
+    kid.scale = stage === 'baby' ? 0.45 : stage === 'toddler' ? 0.6 : 0.78;
     const a = time * (stage === 'baby' ? 0.1 : 0.4);
-    kid.position.set(yard.x - 0.8 + Math.cos(a) * (stage === 'baby' ? 0.2 : 1.4), 0, yard.z + 1.8 + Math.sin(a) * (stage === 'baby' ? 0.2 : 0.9));
-    kid.rotation.y = a + 1.5; animateFarmer(kid, dt, stage === 'baby' ? 0 : 1.2);
+    const nx = yard.x - 0.8 + Math.cos(a) * (stage === 'baby' ? 0.2 : 1.4), nz = yard.z + 1.8 + Math.sin(a) * (stage === 'baby' ? 0.2 : 0.9);
+    kid.dir = dirOf(nx - kid.position.x, nz - kid.position.z); kid.position.set(nx, 0, nz);
+    animatePerson(kid, dt, stage === 'baby' ? 0 : 1.2);
   }
 }
 
@@ -495,52 +466,45 @@ function updateActors(dt) {
     const d = tgt.clone().sub(m.position); d.y = 0;
     const dist = d.length();
     let sp = 0;
-    if (dist > 0.15) { sp = Math.min(dist / dt, id === 'dewi' ? 3.4 : 2.6); d.normalize(); m.position.addScaledVector(d, sp * dt); world.collide(m.position, 0); m.rotation.y = Math.atan2(d.x, d.z); }
+    if (dist > 0.15) { sp = Math.min(dist / dt, id === 'dewi' ? 3.4 : 2.6); d.normalize(); m.position.addScaledVector(d, sp * dt); world.collide(m.position, 0); m.dir = dirOf(d.x, d.z); }
     m.visible = !(place.startsWith('home') && dist < 0.5);           // di dalam rumah
-    animateFarmer(m, dt, sp);
+    animatePerson(m, dt, sp);
   }
 }
 
 // ------------------------------------------------------------------ loop
-const clock = new THREE.Clock();
-const mv = new THREE.Vector2();
-function frame() {
+let last = performance.now();
+const KEYDIR = { w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right' };
+const dirStack = [];   // urutan tombol arah yang sedang ditahan; yang terakhir menentukan arah jalan
+const heldDir = () => { for (let i = dirStack.length - 1; i >= 0; i--) if (keys.has(dirStack[i])) return KEYDIR[dirStack[i]]; return null; };
+function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  cam.yaw += (cam.target - cam.yaw) * Math.min(1, dt * 8);
+  const dt = Math.max(0, Math.min((now - last) / 1000, 0.05)); last = now;   // frame pertama bisa punya selisih negatif
   let speed = 0;
   if (game && $('menu').classList.contains('hidden')) {
     if (!busy && !modalOpen) {
-      mv.set((keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0),
-        (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0));
-      if (mv.lengthSq() > 0) {
-        mv.normalize();
-        const sn = Math.sin(cam.target), cs = Math.cos(cam.target);   // gerak relatif kamera
-        const dx = mv.x * cs + mv.y * sn, dz = -mv.x * sn + mv.y * cs;
+      const dir = heldDir();                    // 4 arah saja: tombol arah yang terakhir ditekan
+      if (dir) {
+        const [dx, dz] = DIRV[dir];
         const exhausted = fatigue(game) === 'exhausted' || fatigue(game) === 'collapse';
-        speed = (keys.has('shift') ? 7 : 4.6) * (exhausted ? 0.6 : 1);
+        speed = (keys.has('shift') ? 6.5 : 4.2) * (exhausted ? 0.6 : 1);
         farmer.position.x += dx * speed * dt; farmer.position.z += dz * speed * dt;
-        world.collide(farmer.position);
-        facing.set(dx, dz);
-        farmer.rotation.y += Math.atan2(Math.sin(Math.atan2(dx, dz) - farmer.rotation.y), Math.cos(Math.atan2(dx, dz) - farmer.rotation.y)) * Math.min(1, dt * 14);
+        world.collide(farmer.position, 0.35, game);
+        farmer.dir = dir;
       }
       const r = advanceMinutes(game, dt / REAL_SECONDS_PER_MINUTE);
       if (r.passedOut) goToSleep(true);
       else if (r.late && !game.flags.lateWarned) { game.flags.lateWarned = true; toast('Sudah lewat tengah malam… sebaiknya tidur.'); }
       if (game.minute < DAY_END) game.flags.lateWarned = false;
     }
-    animateFarmer(farmer, dt, speed);
-    world.update(dt, game, farmer.position);
+    animatePerson(farmer, dt, speed);
     updateFishing(dt);
-    world.cutaway(farmer.position, cam.yaw);
     checkEventTriggers();
-    fireworks.update(dt, eventRun?.id === 'fireworks', 0, 33);
     updateActors(dt);
-    updateFamily(dt, performance.now() / 1000);
-    for (const m of animalMeshes) { m.userData.t += dt; m.position.x = m.userData.home.x + Math.sin(m.userData.t * 0.5) * 0.6; m.rotation.y = Math.cos(m.userData.t * 0.5); m.position.y = Math.abs(Math.sin(m.userData.t * 3)) * 0.04; }
+    updateFamily(dt, now / 1000);
+    for (const m of animalMeshes) { m.userData.t += dt; const nx = m.userData.home.x + Math.sin(m.userData.t * 0.5) * 0.6; m.dir = nx < m.position.x ? 'left' : 'right'; m.position.x = nx; }
     const t = targetTile(), tk = tileKey(t.x, t.z);
-    marker.visible = (inField(t.x, t.z) || !!game.debris[tk]) && !busy;
-    marker.position.set(t.x + 0.5, 0.08, t.z + 0.5);
+    const markerOn = (inField(t.x, t.z) || !!game.debris[tk]) && !busy && !modalOpen;
     const p = farmer.position;
     const label = p.distanceTo(DOOR) < 2.4 ? 'E — Rumah (tidur, masak, TV)' : p.distanceTo(SPOTS.bin) < 2.6 ? 'E — Kotak Pengiriman'
       : (game.dog && dog.visible && dog.position.distanceTo(p) < 2.2) || (kid.visible && kid.position.distanceTo(p) < 2.2) ? 'E — Elus / sapa' : [...actors].some(([, m]) => m.visible && m.position.distanceTo(p) < 2.4) ? 'E — Bicara' : Object.values(BUILDINGS).some((b) => b.shop && p.distanceTo(doorOf(b)) < 2.8) ? 'E — Masuk toko' : (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) ? 'E — Peternakan'
@@ -549,15 +513,16 @@ function frame() {
     $('prompt').textContent = label;
     saveTimer += dt; if (saveTimer > 30) { saveTimer = 0; save(); }
     if (Math.floor(game.minute) % 5 === 0 || speed) hud();
+    renderer.draw(dt, { game, world, farmer, actors: [...actors.values()], animals: animalMeshes, dog, kid, marker: markerOn ? t : null, fishing, fireworks: eventRun?.id === 'fireworks' });
+  } else {
+    renderer.cam.set(0, 0, 5);
+    renderer.draw(dt, { game: PREVIEW, world, farmer: { position: renderer.cam, dir: 'down', scale: 1, style: farmer.style, userData: { phase: 0, swing: 0, moving: false }, visible: false }, actors: [], animals: [], dog: null, kid: null, marker: null, fishing: null, fireworks: false });
   }
-  const cx = farmer.position.x + Math.sin(cam.yaw) * cam.dist * Math.cos(cam.pitch);
-  const cz = farmer.position.z + Math.cos(cam.yaw) * cam.dist * Math.cos(cam.pitch);
-  camera.position.lerp(new THREE.Vector3(cx, cam.dist * Math.sin(cam.pitch) + 1, cz), Math.min(1, dt * 10));
-  camera.lookAt(farmer.position.x, 1.1, farmer.position.z);
-  renderer.render(scene, camera);
 }
+// Latar menu utama: pemandangan ladang pagi hari
+const PREVIEW = { date: { year: 1, season: 0, day: 1 }, minute: 9 * 60, weather: 'sunny', tilled: {}, debris: {} };
 $('toolBtn').onclick = () => { tool = TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) % TOOL_ORDER.length]; hud(); };
 $('bagBtn').onclick = () => toggleRucksack();
 menu();
-frame();
+requestAnimationFrame(frame);
 if (new URLSearchParams(location.search).has('debug')) window.__bb = { get game() { return game; }, farmer, cam, syncAll, actors };   // hook untuk skrip uji
