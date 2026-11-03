@@ -11,6 +11,7 @@ import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, m
 import { World, SPAWN, DOOR, SPOTS, BUILDINGS, PLACES, doorOf } from './world.js';
 import { mesh, G } from './toon.js';
 import { Fireworks } from './fx.js';
+import { play, toggleMute } from './sfx.js';
 
 const $ = (id) => document.getElementById(id);
 const SAVE_KEYS = ['bb-save-1', 'bb-save-2', 'bb-save-3'];
@@ -58,6 +59,7 @@ const keys = new Set();
 function toast(msg) {
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
   $('toasts').appendChild(t); setTimeout(() => t.remove(), 2600);
+  play(/tidak|kurang|penuh|lelah|belum|gagal|sudah|tutup|Garap|Hanya/i.test(msg) ? 'no' : 'blip');
 }
 
 function hud() {
@@ -130,6 +132,7 @@ async function drainQueue() {
 async function playEvent(run) {
   if (!run) return;
   busy = true; modalOpen = true; eventRun = run; closeModal(); modalOpen = true;
+  play('bell');
   $('fade').classList.add('on'); $('fadeText').textContent = run.kind === 'festival' ? `${FESTIVAL_DAYS[run.id].icon} ${FESTIVAL_DAYS[run.id].name}` : '💭';
   await new Promise((r) => setTimeout(r, 900));
   if (run.kind === 'festival') farmer.position.set(0, 0, 36);
@@ -163,16 +166,17 @@ function menu() {
   const list = $('slotList'); list.innerHTML = '';
   SAVE_KEYS.forEach((key, i) => {
     let info = 'Kosong';
-    try { const s = deserialize(localStorage.getItem(key)); info = `${s.name} — ${SEASONS[s.date.season]} ${s.date.day}, Tahun ${s.date.year}`; } catch { /* kosong */ }
+    let old = false;
+    try { const s = deserialize(localStorage.getItem(key)); info = `${s.name} — ${SEASONS[s.date.season]} ${s.date.day}, Tahun ${s.date.year}`; } catch { if (localStorage.getItem(key)) { info = 'Save versi lama (tidak kompatibel, akan ditimpa)'; old = true; } }
     const row = document.createElement('div'); row.className = 'slot-row';
     row.innerHTML = `<div><b>Slot ${i + 1}</b><br><small>${info}</small></div>`;
-    const play = document.createElement('button'); play.className = 'btn';
-    play.textContent = info === 'Kosong' ? 'Mulai Baru' : 'Lanjutkan';
-    play.onclick = () => {
+    const go = document.createElement('button'); go.className = 'btn';
+    go.textContent = info === 'Kosong' || old ? 'Mulai Baru' : 'Lanjutkan';
+    go.onclick = () => {
       slot = i;
-      if (info === 'Kosong') start(newGame($('nameInput').value.trim() || 'Petani')); else start(deserialize(localStorage.getItem(key)));
+      if (info === 'Kosong' || old) start(newGame($('nameInput').value.trim() || 'Petani')); else start(deserialize(localStorage.getItem(key)));
     };
-    row.appendChild(play); list.appendChild(row);
+    row.appendChild(go); list.appendChild(row);
   });
 }
 
@@ -235,6 +239,7 @@ function action() {
   const r = useTool(game, tool, x, z);
   if (r.ok) {
     syncTile(x, z); hud(); advanceMinutes(game, 2);
+    play('tool');
     if (r.got) toast(`Dapat ${ITEMS[r.got].icon} ${ITEMS[r.got].name}`);
     if (r.planted) toast(`Menanam ${CROPS[r.planted].name}`);
   } else toast(REASONS[r.reason] || '…');
@@ -281,7 +286,7 @@ function interact() {
   const { x, z } = targetTile();
   if (isRipe(game.tilled[tileKey(x, z)])) {
     const r = harvest(game, x, z);
-    if (r.ok) { swingTool(farmer); syncTile(x, z); toast(`Panen ${r.got}!`); advanceMinutes(game, 2); hud(); } else toast(REASONS[r.reason] || 'Belum matang.');
+    if (r.ok) { swingTool(farmer); play('good'); syncTile(x, z); toast(`Panen ${r.got}!`); advanceMinutes(game, 2); hud(); } else toast(REASONS[r.reason] || 'Belum matang.');
     return;
   }
   toast('Tidak ada yang bisa dilakukan di sini.');
@@ -313,7 +318,7 @@ function binMenu() {
   openLoop('📦 Kotak Pengiriman', () => [
     ...game.rucksack.filter((s) => s && ITEMS[s.id].sell).map((s) => ({
       label: `${ITEMS[s.id].icon} ${ITEMS[s.id].name} ×${s.n}`, hint: `+${ITEMS[s.id].sell} G / buah`, close: false,
-      fn: () => { ship(game, s.id, 1); },
+      fn: () => { ship(game, s.id, 1); play('coin'); },
     })),
     ...Object.entries(game.bin).map(([id, n]) => ({ label: `Terkirim: ${ITEMS[id].icon} ${ITEMS[id].name} ×${n}`, disabled: true })),
   ], 'Dibayar besok pagi.');
@@ -325,7 +330,7 @@ function shopStatus(id) {
 }
 const buyRow = (id, label) => ({
   label, hint: `${ITEMS[id].buy} G`, close: false, disabled: game.gold < ITEMS[id].buy,
-  fn: () => { const r = buy(game, id, 1); if (r === 'full') toast('Rucksack penuh'); },
+  fn: () => { const r = buy(game, id, 1); if (r === 'full') toast('Rucksack penuh'); else play('coin'); },
 });
 
 function shopMenu(id) {
@@ -458,6 +463,7 @@ addEventListener('keydown', (e) => {
   else if (k === 'x') cam.target -= Math.PI / 2;
   else if (k === 'i') toggleRucksack();
   else if (k === 'v') villagersPanel();
+  else if (k === 'm') toast(toggleMute() ? '🔇 Suara dimatikan' : '🔊 Suara menyala');
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
@@ -489,7 +495,7 @@ function updateActors(dt) {
     const d = tgt.clone().sub(m.position); d.y = 0;
     const dist = d.length();
     let sp = 0;
-    if (dist > 0.15) { sp = Math.min(dist / dt, id === 'dewi' ? 3.4 : 2.6); d.normalize(); m.position.addScaledVector(d, sp * dt); m.rotation.y = Math.atan2(d.x, d.z); }
+    if (dist > 0.15) { sp = Math.min(dist / dt, id === 'dewi' ? 3.4 : 2.6); d.normalize(); m.position.addScaledVector(d, sp * dt); world.collide(m.position, 0); m.rotation.y = Math.atan2(d.x, d.z); }
     m.visible = !(place.startsWith('home') && dist < 0.5);           // di dalam rumah
     animateFarmer(m, dt, sp);
   }
@@ -554,4 +560,4 @@ $('toolBtn').onclick = () => { tool = TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) 
 $('bagBtn').onclick = () => toggleRucksack();
 menu();
 frame();
-window.__bb = { get game() { return game; }, farmer, cam, syncAll, actors };
+if (new URLSearchParams(location.search).has('debug')) window.__bb = { get game() { return game; }, farmer, cam, syncAll, actors };   // hook untuk skrip uji

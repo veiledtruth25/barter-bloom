@@ -62,7 +62,7 @@ export class World {
     scene.add(this.ground);
 
     this.house = makeHouse(); this.house.position.set(0, 0, -6); scene.add(this.house);
-    this.colliders.push({ x: 0, z: -6, r: 3.2 });
+    this.colliders.push({ x: 0, z: -6, r: 2.7 });
 
     const fenceN = makeFence(14); fenceN.position.set(-7, 0, 1.3); scene.add(fenceN);
     const fenceS = makeFence(14); fenceS.position.set(-7, 0, 10.7); scene.add(fenceS);

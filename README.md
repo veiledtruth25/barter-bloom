@@ -1,46 +1,67 @@
 # 🌾 Barter Bloom
 
-Game pertanian **single player** terinspirasi *Harvest Moon: Back to Nature*, dengan visual **Cartoon / Stylized 3D** (toon shading + outline) yang berjalan di browser. Semua logika berjalan di klien; save disimpan di `localStorage` (3 slot). Server hanya menyajikan berkas statis.
+Game pertanian **single player** terinspirasi *Harvest Moon: Back to Nature* dengan gaya visual **Cartoon / Stylized 3D** (toon shading + outline) yang berjalan sepenuhnya di browser. Semua logika di klien, save di `localStorage` (3 slot); server hanya menyajikan berkas statis.
 
-> Nama kota, warga, dialog, dan model dibuat orisinal; hanya struktur permainannya yang mengikuti HM:BTN.
+> Struktur permainan (kalender, stamina, festival, heart event, pernikahan, dll.) mengikuti HM:BTN, tetapi nama kota, warga, dialog, dan model 3D dibuat orisinal.
 
 ## Menjalankan
 
 ```bash
 npm install
-npm start            # http://localhost:3000
-npm test             # tes logika inti
+npm start            # http://localhost:3000   (env PORT mengubah port)
+npm test             # 39 tes logika inti (node --test)
+npm run smoke        # smoke test browser (butuh Playwright; BASE=http://localhost:3000)
 ```
 
-Docker: `docker compose up -d --build` (container `barterbloom`, port internal 3000, jaringan `evertwo-network`).
+**Docker** (di belakang Nginx Proxy Manager): `docker compose up -d --build`
+- container `barterbloom`, port internal **3000**, jaringan eksternal `evertwo-network`
+- port host hanya `127.0.0.1:7474` untuk uji lokal; user non-root; healthcheck `GET /`
+- tidak perlu volume: save ada di browser pemain
+- game tidak lagi memakai websocket (single player), jadi dukungan websocket di proxy tidak diperlukan
 
 ## Kontrol
 
 | Tombol | Aksi |
 |---|---|
 | W A S D / panah | Jalan (Shift = lari) |
-| Spasi | Pakai alat di petak depan karakter (pancing: lempar & tarik) |
-| E | Interaksi: panen, rumah (tidur/masak/TV), kotak pengiriman, warung, peternakan |
+| Spasi | Pakai alat di petak depan karakter (pancing: lempar & tarik); lanjut dialog |
+| E | Interaksi: panen, rumah, kotak pengiriman, toko, warga, hewan, anjing, anak |
 | Q | Ganti alat |
 | Z / X | Putar kamera 90° |
-| V | Daftar warga, tingkat hati, jam buka toko |
-| I | Rucksack · Esc: menu & simpan |
+| I · V · M | Rucksack · Warga & Rapor Desa · Suara on/off |
+| Esc | Tutup menu / menu utama (menyimpan) |
 
-## Status rombakan (branch `hmbtn-rewrite`)
+## Isi game
 
-- [x] **Tahap 1** — inti single player: kalender 4×30 hari (Senin–Minggu), cuaca + ramalan TV, stamina & kelelahan, rucksack 9 slot, save 3 slot, kamera sudut tetap, render toon/outline, cangkul & penyiram.
-- [x] **Tahap 2** — 9 tanaman 3 musim (layu saat musim berganti, tanaman berulang), gulma/batu/tunggul dengan alat yang tepat, kotak pengiriman (dibayar besok), warung benih, ayam & sapi (pakan, elus, telur/susu), tambang (batu & bijih tembaga muncul ulang tiap hari), memancing (lempar → tunggu ❗ → Spasi), memasak di dapur rumah
-- [x] **Tahap 3** — kota (jalan, alun-alun, sumur, 5 toko, 6 rumah), 8 warga dengan jadwal harian (toko buka/tutup per jam & hari, hujan = di rumah), ngobrol & hadiah sekali sehari, selera hadiah, tingkat hati ungu→merah, pandai besi (tingkatkan alat dengan bijih tembaga), toko benih/bunga/klinik/kedai, cutaway bangunan
-- [x] **Tahap 4** — mesin event berbasis generator (`core/events.js`, dites tanpa browser), 7 festival (Bunga, Memasak, Ternak, Kembang Api, Panen, Malam Bintang, Tahun Baru: cerah, toko tutup, warga ke alun-alun, dekorasi & kembang api), 8 heart event berpilihan dengan syarat hati/tempat/jam/hari, dialog gaya visual novel, pemicu otomatis
-- [x] **Tahap 5** — 5 calon pasangan (Ayu, Lina, Maya, Sari, Nina), tukang kayu (rumah → Rumah+Dapur → Kamar Bayi), lamaran dengan Bulu Biru (hati merah + rumah diperbesar), pernikahan 3 hari kemudian di alun-alun, pasangan pindah ke ladang (menyiram tanaman & menyiapkan bekal tiap pagi, toko pasangan tutup), kehamilan → kelahiran → anak tumbuh (bayi/balita/anak), anjing yang bisa dielus, antrean event setelah bangun tidur, rapor & ending di awal tahun ke-3 (juga bisa dilihat kapan saja lewat V → Rapor Desa)
-- [ ] Tahap 6 — perapian & tes
+**Pertanian** — kalender 4 musim × 30 hari (Senin–Minggu), cuaca + ramalan TV, stamina & kelelahan, rucksack 9 slot. 9 tanaman 3 musim (tumbuh bila disiram, hujan menyiram, layu saat ganti musim, sebagian berbuah berulang). Gulma/batu/tunggul butuh sabit/palu/kapak. Kotak pengiriman (dibayar besok). Ayam & sapi (pakan, elus, telur/susu). Tambang batu & bijih tembaga yang muncul ulang. Memancing (lempar → tunggu ❗ → Spasi). Memasak di dapur rumah.
+
+**Desa** — jalan, alun-alun, 6 toko dengan jam buka & hari tutup, 11 warga berjadwal harian (jam, hari, cuaca). Ngobrol & hadiah sekali sehari, selera hadiah, hati ungu→merah. Pandai besi menaikkan level alat; tukang kayu memperbesar rumah.
+
+**Event** — 7 festival (Bunga, Memasak, Ternak, Kembang Api, Panen, Malam Bintang, Tahun Baru; cerah, toko tutup, warga ke alun-alun) dan 10 heart event berpilihan, dimainkan lewat mesin event berbasis generator.
+
+**Keluarga** — 5 calon pasangan, lamaran dengan Bulu Biru, pernikahan, pasangan membantu di ladang, anak yang tumbuh, anjing, rapor & ending di awal tahun ke-3 (game bisa dilanjutkan).
+
+**Visual** — toon shading 4 tingkat, outline inverted-hull, karakter chibi, siklus siang/malam, hujan/salju, cutaway bangunan, efek suara sintetis. Model buatan sendiri (GLB) bisa dipasang lewat `loadGLB()` di `client/js/toon.js` (material otomatis diganti toon + outline).
 
 ## Struktur
 
 ```
-core/      villagers.js (warga, jadwal, toko, hati), farm.js, state.js, calendar.js, items.js — logika murni tanpa DOM/Three (kalender, cuaca, state, barang) — dites dengan node --test
-client/js/ toon.js (material toon+outline, loader GLB), models.js, world.js, main.js
-server/    Express statis
+core/      logika murni tanpa DOM/Three — dites dengan node --test
+  calendar.js  kalender, cuaca, jadwal festival      villagers.js  warga, jadwal, toko, hati, hadiah
+  farm.js      ladang, hewan, ikan, masak, alat      events.js     mesin event (festival, heart, keluarga)
+  family.js    rumah, lamaran, anak, anjing, ending  state.js      state game, tidur, simpan, pembungkus API
+  items.js     data barang
+client/js/ toon.js (material + outline + loader GLB), models.js, world.js, fx.js, sfx.js, main.js
+server/    Express statis (client/, core/, three)
+test/      core.test.js (logika) · e2e/smoke.mjs (browser)
 ```
 
-Model buatan sendiri: `loadGLB(url)` di `client/js/toon.js` mengganti material jadi toon + outline agar gayanya senada.
+Cara menambah konten: warga → `core/villagers.js` (+ gedung di `client/js/world.js`), heart event/festival → `core/events.js` (satu generator), barang/tanaman → `core/items.js`.
+
+## Keterbatasan yang diketahui
+
+- Warga berjalan lurus ke tujuan dengan tabrakan sederhana (belum ada pathfinding).
+- Event berbentuk kotak dialog tanpa kamera/animasi sinematik; dialog masih ringkas.
+- Tambang berupa petak di luar desa, bukan gua bertingkat; alat hanya sampai level tembaga.
+- Belum ada musik, kontrol sentuh/gamepad, atau penyesuaian grafis.
+- Save di `localStorage` (hilang bila data browser dihapus); tidak ada sinkronisasi antarperangkat.
