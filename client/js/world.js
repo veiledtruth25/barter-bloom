@@ -1,10 +1,17 @@
 import * as THREE from 'three';
 import { mesh, G } from './toon.js';
-import { makeTree, makeHouse, makeFence } from './models.js';
+import { makeTree, makeHouse, makeFence, makeBin, makeStall, makeBarn } from './models.js';
+import { FIELD, MINE } from '/core/farm.js';
 
-export const FIELD = { x0: -6, z0: 2, w: 12, h: 8 };
+export { FIELD };
 export const SPAWN = new THREE.Vector3(0, 0, 5);
 export const DOOR = new THREE.Vector3(0, 0, -3.2);
+export const SPOTS = {
+  bin: new THREE.Vector3(4.5, 0, -2.2),
+  stall: new THREE.Vector3(9, 0, 0),
+  barn: new THREE.Vector3(-11, 0, -2),
+  pond: new THREE.Vector3(14, 0, 4),
+};
 
 const SKY = {
   sunny: [0x8fd3ff, 0xffb86b, 0x1b2a5c],
@@ -36,6 +43,12 @@ export class World {
     const fenceN = makeFence(14); fenceN.position.set(-7, 0, 1.3); scene.add(fenceN);
     const fenceS = makeFence(14); fenceS.position.set(-7, 0, 10.7); scene.add(fenceS);
 
+    const add = (m, v, r) => { m.position.copy(v); this.scene.add(m); this.colliders.push({ x: v.x, z: v.z, r }); };
+    add(makeBin(), SPOTS.bin, 1);
+    add(makeStall(), SPOTS.stall, 1.4);
+    add(makeBarn(), SPOTS.barn, 2.6);
+    const floor = mesh(G.box(MINE.w, 0.08, MINE.h, 0.03), 0x7d7487, { outline: false, shadow: false });
+    floor.position.set(MINE.x0 + MINE.w / 2, 0.04, MINE.z0 + MINE.h / 2); scene.add(floor);
     this.pond = mesh(G.cyl(3, 3, 0.1), 0x4db6ff, { thin: true }); this.pond.position.set(14, 0.02, 4); this.pond.scale.set(1, 1, 0.8);
     scene.add(this.pond);
     this.colliders.push({ x: 14, z: 4, r: 3.1 });

@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { REAL_SECONDS_PER_MINUTE, formatClock, weekday, SEASONS, DAY_END } from '/core/calendar.js';
-import { TOOLS, TOOL_ORDER, ITEMS } from '/core/items.js';
-import { newGame, advanceMinutes, sleep, fatigue, useTool, tileKey, serialize, deserialize, eat } from '/core/state.js';
-import { makeFarmer, animateFarmer, swingTool, makeTile } from './models.js';
-import { World, FIELD, SPAWN, DOOR } from './world.js';
+import { TOOLS, TOOL_ORDER, ITEMS, CROPS, RECIPES } from '/core/items.js';
+import {
+  newGame, advanceMinutes, sleep, fatigue, useTool, harvest, tileKey, serialize, deserialize, eat, ship, feedAnimals, collectProducts,
+  cook, buy, countItem, addItem,
+} from '/core/state.js';
+import { FIELD, inField, ANIMALS, buyAnimal, petAnimal, rollFish, isRipe, seedSeasonOk } from '/core/farm.js';
+import { makeFarmer, animateFarmer, swingTool, makeTile, makeCrop, makeDebris, makeAnimal } from './models.js';
+import { World, SPAWN, DOOR, SPOTS } from './world.js';
 import { mesh, G } from './toon.js';
 
 const $ = (id) => document.getElementById(id);
@@ -31,7 +35,7 @@ const marker = mesh(G.box(1, 0.06, 1, 0.03), 0xfff08a, { outline: false, shadow:
 marker.material = marker.material.clone(); marker.material.transparent = true; marker.material.opacity = 0.6;
 scene.add(marker);
 
-let game = null, slot = 0, tool = 'hoe', facing = new THREE.Vector2(0, 1), busy = false, saveTimer = 0;
+let game = null, slot = 0, tool = 'hoe', fishing = null, animalMeshes = [], debrisMeshes = new Map(), facing = new THREE.Vector2(0, 1), busy = false, saveTimer = 0;
 const cam = { yaw: Math.PI / 4, target: Math.PI / 4, dist: 12.5, pitch: 0.95 };
 const keys = new Set();
 
@@ -68,6 +72,21 @@ function renderRucksack() {
 }
 const toggleRucksack = (force) => { const p = $('rucksack'); const open = force ?? p.classList.contains('hidden'); p.classList.toggle('hidden', !open); if (open) renderRucksack(); };
 
+let modalOpen = false;
+function showModal(title, rows, note = '') {
+  modalOpen = true;
+  const m = $('modal'); m.classList.remove('hidden');
+  m.innerHTML = `<h3>${title}</h3>${note ? `<small>${note}</small>` : ''}`;
+  for (const r of rows) {
+    const b = document.createElement('button'); b.className = 'row'; b.disabled = !!r.disabled;
+    b.innerHTML = `<span>${r.label}</span><small>${r.hint || ''}</small>`;
+    b.onclick = () => { r.fn?.(); if (r.close !== false) closeModal(); };
+    m.appendChild(b);
+  }
+  const c = document.createElement('button'); c.className = 'row close'; c.textContent = 'Tutup (Esc)'; c.onclick = closeModal; m.appendChild(c);
+}
+function closeModal() { modalOpen = false; $('modal').classList.add('hidden'); }
+
 function menu() {
   $('menu').classList.remove('hidden'); $('hud').classList.add('hidden');
   const list = $('slotList'); list.innerHTML = '';
@@ -93,7 +112,7 @@ function save() {
 function start(g) {
   game = g; busy = false;
   for (const t of tiles.values()) scene.remove(t); tiles.clear();
-  for (const k of Object.keys(g.tilled)) syncTile(...k.split(',').map(Number));
+  syncAll();
   farmer.position.copy(SPAWN);
   $('menu').classList.add('hidden'); $('hud').classList.remove('hidden');
   hud(); save();
@@ -102,29 +121,151 @@ function start(g) {
 // ---------------------------------------------------------------- ladang
 function syncTile(x, z) {
   const k = tileKey(x, z), d = game.tilled[k];
-  tiles.get(k) && scene.remove(tiles.get(k));
-  if (!d) return;
-  const t = makeTile(true, d.watered); t.position.x = x + 0.5; t.position.z = z + 0.5; t.position.y = 0.04;
-  scene.add(t); tiles.set(k, t);
+  if (tiles.get(k)) { scene.remove(tiles.get(k)); tiles.delete(k); }
+  if (d) {
+    const t = makeTile(true, d.watered); t.position.set(x + 0.5, 0.04, z + 0.5);
+    if (d.crop) t.add(makeCrop(d.crop.id, d.crop.age, CROPS[d.crop.id].days));
+    scene.add(t); tiles.set(k, t);
+  }
+  if (debrisMeshes.get(k)) { scene.remove(debrisMeshes.get(k)); debrisMeshes.delete(k); }
+  if (game.debris[k]) { const m = makeDebris(game.debris[k]); m.position.set(x + 0.5, 0, z + 0.5); scene.add(m); debrisMeshes.set(k, m); }
 }
-const inField = (x, z) => x >= FIELD.x0 && x < FIELD.x0 + FIELD.w && z >= FIELD.z0 && z < FIELD.z0 + FIELD.h;
+function syncAll() {
+  for (const m of debrisMeshes.values()) scene.remove(m); debrisMeshes.clear();
+  for (const k of new Set([...Object.keys(game.tilled), ...Object.keys(game.debris), ...tiles.keys()])) syncTile(...k.split(',').map(Number));
+  syncAnimals();
+}
+function syncAnimals() {
+  animalMeshes.forEach((m) => scene.remove(m)); animalMeshes = [];
+  game.animals.forEach((a, i) => {
+    const m = makeAnimal(a.type);
+    m.userData.home = { x: SPOTS.barn.x + 3.2 + (i % 4) * 1.4 * (a.type === 'cow' ? 1.6 : 1), z: SPOTS.barn.z + (a.type === 'cow' ? 2.6 : 0.5) + Math.floor(i / 4) };
+    m.position.set(m.userData.home.x, 0, m.userData.home.z); m.userData.t = Math.random() * 10;
+    scene.add(m); animalMeshes.push(m);
+  });
+}
 const targetTile = () => ({ x: Math.floor(farmer.position.x + facing.x * 0.9), z: Math.floor(farmer.position.z + facing.y * 0.9) });
 
+const REASONS = {
+  already: 'Tanah ini sudah digarap.', notilled: 'Garap dulu dengan cangkul.', nothing: 'Alat ini tidak berguna di sini.', tired: 'Terlalu lelah.',
+  outside: 'Hanya bisa menggarap di ladang.', occupied: 'Sudah ada tanaman.', noseed: 'Tidak ada benih untuk musim ini.',
+  need_sickle: 'Ada rumput liar: pakai Sabit.', need_hammer: 'Ada batu: pakai Palu.', need_axe: 'Ada tunggul: pakai Kapak.', full: 'Rucksack penuh!',
+};
+
+function nearPond() { return farmer.position.distanceTo(SPOTS.pond) < 5.2; }
+
 function action() {
-  if (busy || !game) return;
+  if (busy || !game || modalOpen) return;
+  if (tool === 'rod') return castRod();
   if (game.stamina <= 0) return toast('Kamu terlalu lelah… cari makanan atau tidur.');
   const { x, z } = targetTile();
   swingTool(farmer);
-  if (!inField(x, z)) return toast('Tidak bisa dipakai di sini.');
   const r = useTool(game, tool, x, z);
-  if (r.ok) { syncTile(x, z); hud(); advanceMinutes(game, 2); }
-  else toast({ already: 'Tanah ini sudah digarap.', notilled: 'Garap dulu dengan cangkul.', nothing: 'Belum ada gunanya di sini.', tired: 'Terlalu lelah.' }[r.reason] || '…');
+  if (r.ok) {
+    syncTile(x, z); hud(); advanceMinutes(game, 2);
+    if (r.got) toast(`Dapat ${ITEMS[r.got].icon} ${ITEMS[r.got].name}`);
+    if (r.planted) toast(`Menanam ${CROPS[r.planted].name}`);
+  } else toast(REASONS[r.reason] || '…');
+}
+
+// ---- memancing: lempar, tunggu gigitan (!), tekan Spasi tepat waktu
+function castRod() {
+  if (fishing) {
+    if (fishing.bite) {
+      const id = rollFish(game, 1);
+      game.stamina = Math.max(0, game.stamina - TOOLS.rod.stamina);
+      if (id === 'boot') toast('Dapat sepatu bekas…'); else toast(`Dapat ${ITEMS[id].icon} ${ITEMS[id].name}!`);
+      if (!addItem(game, id, 1)) toast('Rucksack penuh!');
+      renderRucksack();
+      fishing = null; advanceMinutes(game, 20); hud(); $('prompt').classList.add('hidden');
+    } else { toast('Belum ada gigitan…'); fishing = null; }
+    return;
+  }
+  if (!nearPond()) return toast('Pancing hanya bisa dipakai di tepi kolam.');
+  if (game.stamina <= 0) return toast('Kamu terlalu lelah…');
+  swingTool(farmer);
+  fishing = { t: 1.5 + Math.random() * 3, bite: false, hold: 0 };
+  toast('Umpan dilempar…');
+}
+
+function updateFishing(dt) {
+  if (!fishing) return;
+  fishing.t -= dt;
+  if (!fishing.bite && fishing.t <= 0) { fishing.bite = true; fishing.hold = 0.9; toast('❗ Ada gigitan! Tekan Spasi!'); }
+  else if (fishing.bite) { fishing.hold -= dt; if (fishing.hold <= 0) { fishing = null; toast('Ikannya lepas…'); } }
 }
 
 function interact() {
   if (busy || !game) return;
-  if (farmer.position.distanceTo(DOOR) < 2.2) return goToSleep(false);
+  if (modalOpen) return closeModal();
+  const p = farmer.position;
+  if (p.distanceTo(DOOR) < 2.4) return houseMenu();
+  if (p.distanceTo(SPOTS.bin) < 2.6) return binMenu();
+  if (p.distanceTo(SPOTS.stall) < 2.8) return stallMenu();
+  if (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) return ranchMenu();
+  const { x, z } = targetTile();
+  if (isRipe(game.tilled[tileKey(x, z)])) {
+    const r = harvest(game, x, z);
+    if (r.ok) { swingTool(farmer); syncTile(x, z); toast(`Panen ${r.got}!`); advanceMinutes(game, 2); hud(); } else toast(REASONS[r.reason] || 'Belum matang.');
+    return;
+  }
   toast('Tidak ada yang bisa dilakukan di sini.');
+}
+
+function houseMenu() {
+  const rows = () => [
+    { label: '🛏️ Tidur (akhiri hari)', fn: () => goToSleep(false) },
+    { label: '📺 Ramalan cuaca besok', hint: `${WEATHER_ICON[game.forecast]} ${WEATHER_NAME[game.forecast]}`, close: false },
+    ...Object.entries(RECIPES).map(([id, r]) => ({
+      label: `${r.icon} Masak ${r.name}`, hint: Object.entries(r.needs).map(([i, n]) => `${ITEMS[i].icon}×${n}`).join(' '),
+      disabled: !Object.entries(r.needs).every(([i, n]) => countItem(game, i) >= n), close: false,
+      fn: () => { const res = cook(game, id); toast(res === 'ok' ? `Jadi: ${r.name}!` : res === 'full' ? 'Rucksack penuh' : 'Bahan kurang'); },
+    })),
+  ];
+  openLoop('🏠 Rumah', rows, 'Dapur & TV');
+}
+
+// Modal yang diperbarui otomatis setelah tiap aksi `close:false`.
+function openLoop(title, rowsFn, note) {
+  const draw = () => {
+    const rows = rowsFn().map((r) => ({ ...r, fn: r.fn && (() => { r.fn(); if (r.close === false) { draw(); renderRucksack(); hud(); } }) }));
+    showModal(title, rows, note);
+  };
+  draw();
+}
+
+function binMenu() {
+  openLoop('📦 Kotak Pengiriman', () => [
+    ...game.rucksack.filter((s) => s && ITEMS[s.id].sell).map((s) => ({
+      label: `${ITEMS[s.id].icon} ${ITEMS[s.id].name} ×${s.n}`, hint: `+${ITEMS[s.id].sell} G / buah`, close: false,
+      fn: () => { ship(game, s.id, 1); },
+    })),
+    ...Object.entries(game.bin).map(([id, n]) => ({ label: `Terkirim: ${ITEMS[id].icon} ${ITEMS[id].name} ×${n}`, disabled: true })),
+  ], 'Dibayar besok pagi.');
+}
+
+function stallMenu() {
+  openLoop('🏪 Warung Benih', () => [
+    ...Object.entries(CROPS).map(([id, c]) => ({
+      label: `🌱 ${c.name}`, hint: `${c.seed} G · ${c.seasons.map((i) => SEASONS[i]).join('/')}`, close: false,
+      disabled: !seedSeasonOk(game, `${id}_seed`) || game.gold < c.seed,
+      fn: () => { const r = buy(game, `${id}_seed`, 1); if (r === 'full') toast('Rucksack penuh'); },
+    })),
+    { label: '🍵 Jamu (+40 stamina)', hint: '100 G', close: false, disabled: game.gold < 100, fn: () => { buy(game, 'herb', 1); } },
+  ], `Uangmu: ${game.gold} G (hanya benih musim ini)`);
+}
+
+function ranchMenu() {
+  openLoop('🐄 Peternakan', () => [
+    ...Object.entries(ANIMALS).map(([type, a]) => ({
+      label: `${a.icon} Beli ${a.name}`, hint: `${a.price} G`, close: false, disabled: game.gold < a.price,
+      fn: () => { const r = buyAnimal(game, type); if (r === 'full') toast('Kandang penuh'); syncAnimals(); },
+    })),
+    { label: '🌿 Beri makan (rumput)', hint: `${countItem(game, 'grass')} rumput`, close: false, fn: () => { const n = feedAnimals(game); toast(n ? `${n} hewan makan` : 'Tidak ada rumput / semua sudah makan'); } },
+    { label: '🤚 Elus semua hewan', close: false, fn: () => { let n = 0; game.animals.forEach((_, i) => { if (petAnimal(game, i)) n++; }); toast(n ? `${n} hewan senang ♥` : 'Mereka sudah kamu elus'); } },
+    { label: '🧺 Ambil telur & susu', close: false, fn: () => { const got = collectProducts(game); toast(Object.keys(got).length ? Object.entries(got).map(([i, n]) => `${ITEMS[i].icon}×${n}`).join(' ') : 'Belum ada hasil'); } },
+    ...game.animals.map((a, i) => ({ label: `${ANIMALS[a.type].icon} Hewan ${i + 1}`, hint: `♥ ${a.love}/10 ${a.fed ? '· kenyang' : '· lapar'}`, disabled: true })),
+  ], 'Beri makan setiap hari agar berproduksi.');
 }
 
 function goToSleep(passedOut) {
@@ -133,7 +274,9 @@ function goToSleep(passedOut) {
   $('fadeText').textContent = passedOut ? 'Kamu pingsan karena kelelahan…' : 'Zzz…';
   setTimeout(() => {
     const r = sleep(game, { passedOut });
-    for (const k of Object.keys(game.tilled)) syncTile(...k.split(',').map(Number));
+    syncAll();
+    if (r.income) setTimeout(() => toast(`Hasil pengiriman: +${r.income} G`), 1800);
+    r.wilted?.length && setTimeout(() => toast(`${r.wilted.length} tanaman layu karena pergantian musim`), 2600);
     farmer.position.copy(passedOut ? DOOR.clone().add(new THREE.Vector3(0, 0, 1.5)) : SPAWN);
     save(); hud();
     $('fadeText').textContent = `${SEASONS[game.date.season]} ${game.date.day} · ${r.weekday}`;
@@ -146,13 +289,14 @@ addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase(); keys.add(k);
   if (!game) return;
+  if (k === 'escape') { if (modalOpen) return closeModal(); save(); toggleRucksack(false); return menu(); }
   if (k === ' ') { e.preventDefault(); action(); }
   else if (k === 'e') interact();
+  else if (modalOpen) return;
   else if (k === 'q') { tool = TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) % TOOL_ORDER.length]; hud(); }
   else if (k === 'z') cam.target += Math.PI / 2;
   else if (k === 'x') cam.target -= Math.PI / 2;
   else if (k === 'i') toggleRucksack();
-  else if (k === 'escape') { save(); toggleRucksack(false); menu(); }
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
@@ -166,7 +310,7 @@ function frame() {
   cam.yaw += (cam.target - cam.yaw) * Math.min(1, dt * 8);
   let speed = 0;
   if (game && $('menu').classList.contains('hidden')) {
-    if (!busy) {
+    if (!busy && !modalOpen) {
       mv.set((keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0),
         (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0));
       if (mv.lengthSq() > 0) {
@@ -187,12 +331,17 @@ function frame() {
     }
     animateFarmer(farmer, dt, speed);
     world.update(dt, game, farmer.position);
-    const t = targetTile();
-    marker.visible = inField(t.x, t.z) && !busy;
+    updateFishing(dt);
+    for (const m of animalMeshes) { m.userData.t += dt; m.position.x = m.userData.home.x + Math.sin(m.userData.t * 0.5) * 0.6; m.rotation.y = Math.cos(m.userData.t * 0.5); m.position.y = Math.abs(Math.sin(m.userData.t * 3)) * 0.04; }
+    const t = targetTile(), tk = tileKey(t.x, t.z);
+    marker.visible = (inField(t.x, t.z) || !!game.debris[tk]) && !busy;
     marker.position.set(t.x + 0.5, 0.08, t.z + 0.5);
-    const near = farmer.position.distanceTo(DOOR) < 2.2;
-    $('prompt').classList.toggle('hidden', !near);
-    $('prompt').textContent = 'E — Tidur (akhiri hari)';
+    const p = farmer.position;
+    const label = p.distanceTo(DOOR) < 2.4 ? 'E — Rumah (tidur, masak, TV)' : p.distanceTo(SPOTS.bin) < 2.6 ? 'E — Kotak Pengiriman'
+      : p.distanceTo(SPOTS.stall) < 2.8 ? 'E — Warung Benih' : (p.distanceTo(SPOTS.barn) < 4.5 || animalMeshes.some((m) => m.position.distanceTo(p) < 2.2)) ? 'E — Peternakan'
+      : isRipe(game.tilled[tk]) ? 'E — Panen' : fishing ? (fishing.bite ? '❗ Spasi sekarang!' : '🎣 Menunggu…') : (tool === 'rod' && nearPond()) ? 'Spasi — Lempar pancing' : '';
+    $('prompt').classList.toggle('hidden', !label || modalOpen);
+    $('prompt').textContent = label;
     saveTimer += dt; if (saveTimer > 30) { saveTimer = 0; save(); }
     if (Math.floor(game.minute) % 5 === 0 || speed) hud();
   }
@@ -206,3 +355,4 @@ $('toolBtn').onclick = () => { tool = TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) 
 $('bagBtn').onclick = () => toggleRucksack();
 menu();
 frame();
+window.__bb = { get game() { return game; }, farmer, cam, syncAll };
